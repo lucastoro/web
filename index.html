@@ -1,0 +1,268 @@
+
+<!doctype html>
+<html>
+	<head>
+		<title>COVID-19 Status</title>
+		<meta charset="UTF-8">
+		<script src="https://github.com/chartjs/Chart.js/releases/download/v2.9.3/Chart.min.js"></script>
+		<style>
+		html, body {
+			width: 100%;
+			height: 100%;
+			margin: 0;
+			padding: 0;
+			overflow: hidden;
+		}
+		body {
+			background-color: #333;
+		    font-family: arial;
+		    color: #EEE;
+		}
+		#char_container {
+			max-width: 75%;
+			margin: 0 auto;
+		}
+		canvas{
+			-moz-user-select: none;
+			-webkit-user-select: none;
+			-ms-user-select: none;
+		}
+		input, select {
+			height: 24px;
+		}
+		input[type=checkbox] {
+			height: initial;
+		}
+		#controls {
+			position: fixed;
+			background-color: rgba(0,0,0,0.25);
+			margin: 8px;
+		}
+		#datasets {
+			padding: 0px 8px 0px 8px;
+		}
+		.field, .region {
+			margin-right: 8px;
+		}
+		#datasets > div {
+			margin-top: 8px;
+		}
+		#controls > input[type=button] {
+			
+		}
+		#controls > #global {
+			padding: 8px;
+		}
+		</style>
+	</head>
+	<body>
+		<div id="controls">
+			<div id="datasets"></div>
+			<div id='global'>
+				<input type="button" id="add_dataset" value="➕">
+				<input type="checkbox" id="logarithmic" value="logarithmic">Logarithmic
+			</div>
+		</div>
+		<div id="char_container">
+			<canvas id="chart"></canvas>
+		</div>
+		<script>
+		
+		const PER_REGION_DATASET = "https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-regioni.json";
+		const COUNTRY_DATASET = 'https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-json/dpc-covid19-ita-andamento-nazionale.json';
+		let data = null;
+		let chart = null;
+		const field = document.getElementById('field')
+		const region = document.getElementById('region')
+		const logarithmic = document.getElementById('logarithmic')
+		const addButton = document.getElementById('add_dataset');
+		
+		addButton.onclick = addDataset;
+		logarithmic.onchange = plot;
+		
+		function createSelect(clazz, options) {
+			const select = document.createElement("select");
+			options.forEach(function(opt){
+				const o = document.createElement("option");
+				o.innerText = opt
+				o.setAttribute('value', opt);
+				select.append(o);
+			});
+	
+			select.setAttribute('class', clazz);
+			select.selectedIndex = 0;
+			select.oninput = plot;
+			return select
+		}
+		
+		function genColor() {
+			const r = Math.floor(Math.random() * 255).toString(16).padStart(2, '0');
+			const b = Math.floor(Math.random() * 255).toString(16).padStart(2, '0');
+			const g = Math.floor(Math.random() * 255).toString(16).padStart(2, '0');
+			return `#${r}${g}${b}`
+		}
+		
+		function addDataset() {
+			addDataset.monotonic = addDataset.monotonic || 0;
+			addDataset.monotonic += 1
+			
+			const datasets = document.getElementById("datasets");
+			const id = `dataset_${addDataset.monotonic}`
+			const filtered = new Set(["data", "stato", "codice_regione", "denominazione_regione", "lat", "long"])
+			
+			const s1 = createSelect("field", labels.filter(entry => !filtered.has(entry)));
+			const s2 = createSelect("region", regions);
+			const b = document.createElement('input');
+			b.setAttribute('type', 'button');
+			b.setAttribute('value', '❌');
+			b.setAttribute('dataset', id);
+			b.onclick = function(e) {
+				removeDataset(e.target.getAttribute('dataset'));
+			}
+			const d = document.createElement('div');
+			d.setAttribute("id", id);
+			d.setAttribute("color", genColor());
+			d.append(s2);
+			d.append(s1);
+			d.append(b);
+			datasets.append(d);
+			plot();
+		}
+		
+		function removeDataset(name) {
+			const ds = document.getElementById(name);
+			ds.remove();
+			plot();
+		}
+		
+		Date.prototype.toString = function() {
+			return `${this.getDate()}/${this.getMonth()}`;
+		};
+		
+		function label_plot(item, data) {
+			const B = data.datasets[item.datasetIndex].data[item.index + 0].y;
+			let suffix = "";
+			if (item.index > 0) {
+				const A = data.datasets[item.datasetIndex].data[item.index - 1].y;
+				if (A == B)
+					suffix = " (=)"
+				else
+					suffix = ` (${B > A ? "+" : ""}${B - A})`
+			}
+			
+			return `${data.datasets[item.datasetIndex].label}: ${B}${suffix}`
+		}
+		
+		function download(url, ok, er) {
+			const xhttp = new XMLHttpRequest();
+			xhttp.onreadystatechange = function() {
+				if (this.readyState == 4) {
+					if (this.status == 200) {
+						if (ok) ok(this);
+					} else {
+						if (er) er(this);
+					}
+				}
+			};
+			xhttp.open("GET", url);
+			xhttp.send();
+		}
+		
+		function plot() {
+			const ctx = document.getElementById('chart').getContext('2d');
+			const dataset_input = document.getElementById('datasets').childNodes;
+			const datasets = []
+			dataset_input.forEach(function(input) {
+				const sel_region = input.querySelector(".region").value;
+				const sel_field = input.querySelector(".field").value;
+				const _region = data.filter(entry => entry.denominazione_regione == sel_region)
+				const content = _region.map(function(entry) { return {x: entry.data, y: entry[sel_field]}; });
+				const label = `${sel_field} - ${sel_region}`;
+				
+				datasets.push({
+					borderColor: input.getAttribute('color'),
+					label: label,
+					data: content,
+					lineTension: 0.1,
+				});
+			});
+			
+			
+			if (chart == null) {
+				
+				const dates = datasets[0].data.map(entry => entry.x);
+			
+				chart = new Chart(ctx, {
+					type: 'line',
+					data: {
+						labels: dates,
+						datasets: datasets
+					},
+					options: {
+						//responsive: true,
+						scales: {
+							xAxes: [{
+								display: true,
+							}],
+							yAxes: [{
+								display: true,
+								type: logarithmic.checked ? 'logarithmic' : 'linear',
+							}]
+						},
+						tooltips: {
+							callbacks: {
+								label: label_plot
+							}
+						}
+					}
+				});
+			} else {
+				chart.config.data.datasets = datasets;
+				chart.config.options.scales.yAxes[0].type = logarithmic.checked ? 'logarithmic' : 'linear',
+				chart.update();
+			}
+		}
+		
+		download(PER_REGION_DATASET, function(res){
+			
+			data = JSON.parse(res.responseText);
+			
+			download(COUNTRY_DATASET, function(res) {
+			
+				/* fake a "Italy" region*/ {
+					let temp = JSON.parse(res.responseText);
+					
+					temp.forEach(function(entry) {
+						entry.codice_regione = 0;
+						entry.denominazione_regione = "Italia";
+						entry.lat = 42.35122196;
+						entry.long = 13.39843823;
+					});
+					
+					data.forEach(function(entry) {
+						temp.push(entry);
+					});
+					
+					data = temp
+				}
+				
+				data.forEach(function(a, b, c){
+					c[b].data = new Date(c[b].data);
+				});
+				
+				labels = [];
+				for (k in data[0]) {
+					labels.push(k);
+				}
+				
+				regions = [...new Set(data.map(entry => entry.denominazione_regione))];
+				
+				addDataset()
+				
+				plot();
+			});
+		});
+
+		</script>
+	</body>
+</html>
