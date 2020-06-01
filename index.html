@@ -61,6 +61,7 @@
 			<div id='global'>
 				<input type="button" id="add_dataset" value="➕">
 				<input type="checkbox" id="logarithmic" value="logarithmic">Logarithmic
+				<input type="checkbox" id="derivative" value="derivative">Δx
 			</div>
 		</div>
 		<div id="char_container">
@@ -75,10 +76,12 @@
 		const field = document.getElementById('field')
 		const region = document.getElementById('region')
 		const logarithmic = document.getElementById('logarithmic')
+		const derivative = document.getElementById('derivative')
 		const addButton = document.getElementById('add_dataset');
 		
 		addButton.onclick = addDataset;
 		logarithmic.onchange = plot;
+		derivative.onchange = plot;
 		
 		function createSelect(clazz, options) {
 			const select = document.createElement("select");
@@ -168,6 +171,19 @@
 			xhttp.send();
 		}
 		
+		function derive(list) {
+			var last = null;
+			return list.map(function(v,i){
+				if (0 === i) {
+					last = v;
+					return {x: v.x, y: 0};
+				}
+				const r = {x: v.x, y: v.y - last.y}
+				last = v;
+				return r
+			});
+		}
+
 		function plot() {
 			const ctx = document.getElementById('chart').getContext('2d');
 			const dataset_input = document.getElementById('datasets').childNodes;
@@ -176,9 +192,13 @@
 				const sel_region = input.querySelector(".region").value;
 				const sel_field = input.querySelector(".field").value;
 				const _region = data.filter(entry => entry.denominazione_regione == sel_region)
-				const content = _region.map(function(entry) { return {x: entry.data, y: entry[sel_field]}; });
+				var content = _region.map(function(entry) { return {x: entry.data, y: entry[sel_field]}; });
 				const label = `${sel_field} - ${sel_region}`;
-				
+			
+				if (derivative.checked) {
+					content = derive(content);
+				}
+
 				datasets.push({
 					borderColor: input.getAttribute('color'),
 					label: label,
@@ -186,8 +206,7 @@
 					lineTension: 0.1,
 				});
 			});
-			
-			
+		
 			if (chart == null) {
 				
 				const dates = datasets[0].data.map(entry => entry.x);
