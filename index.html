@@ -134,6 +134,11 @@
 			const id = `dataset_${addDataset.monotonic}`
 			const filtered = new Set(["data", "stato", "codice_regione", "denominazione_regione", "lat", "long"])
 			
+			let labels = [];
+			for (k in data[0]) {
+				labels.push(k);
+			}
+			
 			const s1 = createSelect("field", labels.filter(entry => !filtered.has(entry)));
 			const s2 = createSelect("region", regions);
 			const x = document.createElement('input');
@@ -164,7 +169,7 @@
 		}
 		
 		Date.prototype.toString = function() {
-			return `${this.getDate()}/${this.getMonth()}`;
+			return `${this.getDate()}/${this.getMonth() + 1}`;
 		};
 		
 		function label_plot(item, data) {
@@ -232,9 +237,9 @@
 					lineTension: 0.1,
 				});
 			});
-		
+
 			if (chart == null) {
-				
+			
 				const dates = datasets[0].data.map(entry => entry.x);
 			
 				chart = new Chart(ctx, {
@@ -291,14 +296,9 @@
 					data = temp
 				}
 				
-				data.forEach(function(a, b, c){
-					c[b].data = new Date(c[b].data);
+				data.forEach(function(a){
+					a.data = new Date(a.data);
 				});
-				
-				labels = [];
-				for (k in data[0]) {
-					labels.push(k);
-				}
 				
 				regions = [...new Set(data.map(entry => entry.denominazione_regione))];
 				
