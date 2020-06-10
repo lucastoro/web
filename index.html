@@ -44,7 +44,7 @@
 		.field, .region {
 			margin-right: 8px;
 		}
-		.derivative-container {
+		.checkbox {
 			display: inline;
 			margin-right: 11px;
 		}
@@ -100,10 +100,29 @@
 			return select
 		}
 		
+		function createCheckbox(text) {
+			const b = document.createElement('input');
+			b.setAttribute('type', 'checkbox');
+			b.onchange = plot;
+			
+			const t = document.createElement('span');
+			t.innerHTML = text;
+			
+			const c = document.createElement('div');
+			c.className = 'checkbox';
+			c.append(b);
+			c.append(t);
+			
+			return c;
+		}
+		
 		function genColor() {
-			const r = Math.floor(Math.random() * 255).toString(16).padStart(2, '0');
-			const b = Math.floor(Math.random() * 255).toString(16).padStart(2, '0');
-			const g = Math.floor(Math.random() * 255).toString(16).padStart(2, '0');
+			function genComp(min) {
+				return Math.floor(min + Math.random() * (255 - min)).toString(16).padStart(2, '0');
+			}
+			const r = genComp(64);
+			const g = genComp(64);
+			const b = genComp(64);
 			return `#${r}${g}${b}`
 		}
 		
@@ -125,24 +144,14 @@
 				removeDataset(e.target.getAttribute('dataset'));
 			}
 			
-			const d = document.createElement('div');
-			d.className = 'derivative-container';
-			{
-				const d1 = document.createElement('input');
-				d1.setAttribute('type', 'checkbox');
-				d1.onchange = plot;
-				d1.className = 'derivative';
-				const d2 = document.createTextNode('Δx');
-				d.append(d1);
-				d.append(d2);
-			}
+			const b = createCheckbox('Δx');
 			
 			const c = document.createElement('div');
 			c.setAttribute("id", id);
-			c.setAttribute("color", genColor());
+			c.style.color = genColor();
 			c.append(s2);
 			c.append(s1);
-			c.append(d);
+			c.append(b);
 			c.append(x);
 			datasets.append(c);
 			plot();
@@ -207,7 +216,7 @@
 			dataset_input.forEach(function(input) {
 				const sel_region = input.querySelector(".region").value;
 				const sel_field = input.querySelector(".field").value;
-				const is_deriv = input.querySelector(".derivative").checked;
+				const is_deriv = input.querySelector(".checkbox input").checked;
 				const _region = data.filter(entry => entry.denominazione_regione == sel_region)
 				var content = _region.map(function(entry) { return {x: entry.data, y: entry[sel_field]}; });
 				const label = `${sel_field} - ${sel_region}` + (is_deriv ? ' (Δx)' : '');
@@ -217,7 +226,7 @@
 				}
 
 				datasets.push({
-					borderColor: input.getAttribute('color'),
+					borderColor: input.style.color,
 					label: label,
 					data: content,
 					lineTension: 0.1,
