@@ -44,6 +44,10 @@
 		.field, .region {
 			margin-right: 8px;
 		}
+		.derivative-container {
+			display: inline;
+			margin-right: 11px;
+		}
 		#datasets > div {
 			margin-top: 8px;
 		}
@@ -61,7 +65,6 @@
 			<div id='global'>
 				<input type="button" id="add_dataset" value="➕">
 				<input type="checkbox" id="logarithmic" value="logarithmic">Logarithmic
-				<input type="checkbox" id="derivative" value="derivative">Δx
 			</div>
 		</div>
 		<div id="char_container">
@@ -81,7 +84,6 @@
 		
 		addButton.onclick = addDataset;
 		logarithmic.onchange = plot;
-		derivative.onchange = plot;
 		
 		function createSelect(clazz, options) {
 			const select = document.createElement("select");
@@ -92,7 +94,7 @@
 				select.append(o);
 			});
 	
-			select.setAttribute('class', clazz);
+			select.className = clazz;
 			select.selectedIndex = 0;
 			select.oninput = plot;
 			return select
@@ -115,20 +117,34 @@
 			
 			const s1 = createSelect("field", labels.filter(entry => !filtered.has(entry)));
 			const s2 = createSelect("region", regions);
-			const b = document.createElement('input');
-			b.setAttribute('type', 'button');
-			b.setAttribute('value', '❌');
-			b.setAttribute('dataset', id);
-			b.onclick = function(e) {
+			const x = document.createElement('input');
+			x.setAttribute('type', 'button');
+			x.setAttribute('value', '❌');
+			x.setAttribute('dataset', id);
+			x.onclick = function(e) {
 				removeDataset(e.target.getAttribute('dataset'));
 			}
+			
 			const d = document.createElement('div');
-			d.setAttribute("id", id);
-			d.setAttribute("color", genColor());
-			d.append(s2);
-			d.append(s1);
-			d.append(b);
-			datasets.append(d);
+			d.className = 'derivative-container';
+			{
+				const d1 = document.createElement('input');
+				d1.setAttribute('type', 'checkbox');
+				d1.onchange = plot;
+				d1.className = 'derivative';
+				const d2 = document.createTextNode('Δx');
+				d.append(d1);
+				d.append(d2);
+			}
+			
+			const c = document.createElement('div');
+			c.setAttribute("id", id);
+			c.setAttribute("color", genColor());
+			c.append(s2);
+			c.append(s1);
+			c.append(d);
+			c.append(x);
+			datasets.append(c);
 			plot();
 		}
 		
@@ -191,11 +207,12 @@
 			dataset_input.forEach(function(input) {
 				const sel_region = input.querySelector(".region").value;
 				const sel_field = input.querySelector(".field").value;
+				const is_deriv = input.querySelector(".derivative").checked;
 				const _region = data.filter(entry => entry.denominazione_regione == sel_region)
 				var content = _region.map(function(entry) { return {x: entry.data, y: entry[sel_field]}; });
-				const label = `${sel_field} - ${sel_region}`;
+				const label = `${sel_field} - ${sel_region}` + (is_deriv ? ' (Δx)' : '');
 			
-				if (derivative.checked) {
+				if (is_deriv) {
 					content = derive(content);
 				}
 
