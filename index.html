@@ -115,7 +115,7 @@
 			
 			return c;
 		}
-		
+
 		function genColor() {
 			function genComp(min) {
 				return Math.floor(min + Math.random() * (255 - min)).toString(16).padStart(2, '0');
@@ -150,13 +150,16 @@
 			}
 			
 			const b = createCheckbox('Δx');
-			
+		
+            const n = createSelect('smooth', [1,2,4,8,16,32]);
+        	
 			const c = document.createElement('div');
 			c.setAttribute("id", id);
 			c.style.color = genColor();
 			c.append(s2);
 			c.append(s1);
 			c.append(b);
+			c.append(n);
 			c.append(x);
 			datasets.append(c);
 			plot();
@@ -214,6 +217,19 @@
 			});
 		}
 
+        function SMA(list, amount) {
+			return list.map(function(v,i,l){
+                const min = Math.max(0, i - (amount / 2));
+                const max = Math.min(l.length - 1, i + (amount / 2));
+                let value = 0.0;
+                for (let x = min; x < max; x++) {
+                    value += l[x].y;
+                }
+                value /= (max - min);
+                return {x: v.x, y: value};
+			});
+        }
+
 		function plot() {
 			const ctx = document.getElementById('chart').getContext('2d');
 			const dataset_input = document.getElementById('datasets').childNodes;
@@ -222,6 +238,7 @@
 				const sel_region = input.querySelector(".region").value;
 				const sel_field = input.querySelector(".field").value;
 				const is_deriv = input.querySelector(".checkbox input").checked;
+                const smooth = parseInt(input.querySelector(".smooth").value);
 				const _region = data.filter(entry => entry.denominazione_regione == sel_region)
 				var content = _region.map(function(entry) { return {x: entry.data, y: entry[sel_field]}; });
 				const label = `${sel_field} - ${sel_region}` + (is_deriv ? ' (Δx)' : '');
@@ -229,6 +246,10 @@
 				if (is_deriv) {
 					content = derive(content);
 				}
+
+                if (smooth > 1) {
+                    content = SMA(content, smooth);
+                }
 
 				datasets.push({
 					borderColor: input.style.color,
