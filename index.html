@@ -205,28 +205,38 @@
 		}
 		
 		function derive(list) {
-			var last = null;
-			return list.map(function(v,i){
-				if (0 === i) {
-					last = v;
-					return {x: v.x, y: 0};
-				}
-				const r = {x: v.x, y: v.y - last.y}
-				last = v;
-				return r
-			});
+			var res = [];
+			var min = 0;
+			var max = list.length - 1;
+			
+			while (list[min].y === null) min++;
+			while (list[max].y === null) max--;
+			
+			for (let i = min + 1; i < max; i++) {
+				const v = {x: list[i].x, y: list[i].y - list[i-1].y};
+				res.push(v);
+			}
+			
+			return res;
 		}
 
         function SMA(list, amount) {
 			return list.map(function(v,i,l){
-                const min = Math.max(0, i - (amount / 2));
-                const max = Math.min(l.length - 1, i + (amount / 2));
-                let value = 0.0;
-                for (let x = min; x < max; x++) {
-                    value += l[x].y;
-                }
-                value /= (max - min);
-                return {x: v.x, y: value};
+				if (v.y === null) {
+					return v;
+				}
+				let min = Math.max(0, i - (amount / 2));
+				let max = Math.min(l.length - 1, i + (amount / 2));
+				
+				while (l[min].y == null) min++;
+				while (l[max].y == null) max--;
+				
+				let value = 0.0;
+				for (let x = min; x < max; x++) {
+					value += l[x].y;
+				}
+				value /= (max - min);
+				return {x: v.x, y: value};
 			});
         }
 
