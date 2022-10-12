@@ -1,0 +1,941 @@
+<!doctype html>
+<html>
+	<head>
+		<title>Audio delay test</title>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<style>
+			html, body {
+				padding: 0;
+				margin: 0;
+				width: 100%;
+    		    height: 100%;
+    		    box-sizing: border-box;
+			}
+			body {
+			    text-align: center;
+    		    font-family: monospace;
+    		    background-color: #111;
+    		    color: black;
+    		    overflow: hidden;
+    		    padding: 32px;
+			}
+			* {
+    			
+			}
+			.button {
+				border: solid 1px black;
+			    padding: 16px 24px;
+			    display: inline-block;
+			    cursor: pointer;
+			    background-color: #A33;
+			    border-radius: 4px;
+			    font-size: 2em;
+			    margin: 32px;
+			}
+			.button:hover {
+				color: #AAA;
+			}
+			.disabled {
+				background-color: gray;
+				color: darkgray;
+			}
+			#output {
+				color: #AAA;
+				margin: 32px;
+			}
+			.highlighted {
+				color: #AAA;
+			}
+			canvas {
+				width: 100%;
+			}
+    	</style>
+	</head>
+	<body>
+		<div class='flex'>
+			<textarea id='custom-transform'></textarea>
+			<div>
+				<div class='button' id='play'>Test</div>
+				<div class='button' id='show'>Hide Graph</div>
+				<div id='output'>
+					Raise the volume, move the headphones/speakers close to the microphone, press 'Test' and brace yourself.<br />
+					Hide the graph to reduce CPU usage and get more stable results.
+				</div>
+			</div>
+			<canvas id='graph'></canvas>
+			<canvas id='stats'></canvas>
+			
+		</div>
+		
+		<script>
+		
+			'use strict';
+		
+			const play = document.getElementById('play');
+			const show = document.getElementById('show');
+			const output = document.getElementById('output');
+			const canvas = document.getElementById('graph');
+			const stats = document.getElementById('stats');
+			
+			let transform = null;
+			const customTransform = document.getElementById('custom-transform');
+			const ctx = canvas.getContext('2d');
+			
+			customTransform.onkeyup = function(ev) {
+				try {
+					eval(`transform = data => ${ev.target.value}`);
+					console.log('transform applied');
+				} catch (any) {
+					console.error(any);
+				}
+			}
+			
+			window.onresize = () => {
+				canvas.needsResize = true;
+				stats.needsResize = true;
+			}
+			
+			onresize();
+			
+			function almost(a, b, d) {
+				d = d || b * 0.05;
+				return Math.abs(a - b) < d;
+			}
+			
+			function GCD(a, b) {
+				return b ? GCD(b, a % b) : a;
+			}
+
+			function note(freq, base, solfeggio) {
+				note.names = note.names   || ['G#', 'A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G'];
+				note.names_ = note.names_ || ['Re#', 'Mi', 'Mi#', 'Fa', 'Sol', 'Sol#', 'La', 'La#', 'Si', 'Do', 'Do#', 'Re'];
+				const k = Math.floor(12 * Math.log2(freq / (base || 440.0)) + 49);
+				const a = (solfeggio ? note.names_ : note.names)[k % 12];
+				const b = Math.floor((k + 8) / 12);
+				return `${a}${b}`;
+			}
+			
+			// this is quite fast, O(expected) instead of O(data) but maybe too naive
+			function matchSpectrum(data, multiplier, expected, noise) {
+
+				let count = expected.length;
+				
+				for (let freq of expected) {
+					
+					const i = Math.floor(freq / multiplier);
+					
+					if (data.isPeak(i, 4, noise)) {
+						if (--count === 0) {
+							return true;
+						}
+					}
+				}
+				
+				return false;
+			}
+			
+			function drawSamples(data) {
+				
+				let canvas = stats;
+				
+				if (canvas.needsResize) {
+					canvas.width = canvas.offsetWidth;
+					canvas.height = canvas.offsetHeight;
+					canvas.needsResize = false;
+				}
+				
+				if (data.length === 0) {
+					return;
+				}
+				
+				let ctx = canvas.getContext('2d');
+
+				const W = canvas.width;
+				const H = canvas.height;
+				const w = W / data.length;
+				const h = H / data.range;
+				
+				ctx.clearRect(0, 0, W, H);
+				
+				ctx.beginPath();
+				ctx.strokeStyle = "#AAA";
+				[0, 0.25, 0.5, 0.75, 1.0].forEach(function(v) {
+					const y = 1 - v;
+					ctx.moveTo(0, y * H);
+					ctx.lineTo(W, y * H);
+					ctx.stroke();
+				});
+
+				data.forEach(function(sample, index){
+					const n = data.normalized(index);
+					const x = index * w + w * 0.25;
+					const y = (1 - n) * H;
+					
+					ctx.fillStyle = `rgb(${n * 150}, ${(1 - n) * 150}, 0)`;
+					ctx.fillRect(x, y, w * .5, H);
+				});
+				
+				const formatter = (x) => `${Math.round(x * 1000.0)}ms`;
+
+				ctx.fillStyle = "#FFF";
+				[0, 0.25, 0.5, 0.75].forEach(function(v) {
+					ctx.fillText(`${formatter(data.min + v * data.range)}`, 0, (1 - v) * H - 3);
+				});
+				
+				ctx.fillText(`${formatter(data.max)}`, 0, 12);
+			}
+			
+			function drawSpectrum(data, freqMultiplier) {
+				
+				if (canvas.needsResize) {
+					canvas.width = canvas.offsetWidth;
+					canvas.height = canvas.offsetHeight;
+					canvas.needsResize = false;
+				}
+				
+				const W = canvas.width;
+				const H = canvas.height;
+				
+				ctx.strokeStyle = 'white';
+				ctx.font = "12px monospace";
+				ctx.clearRect(0, 0, W, H);
+				ctx.strokeRect(0, 0, W, H);
+				ctx.beginPath();
+				ctx.moveTo(0, H/2);
+				ctx.lineTo(W, H/2);
+				ctx.stroke();
+				
+				function plot(samples, color, stats) {
+				
+					const max = 0;    // dB
+					const min = -200; // dB
+					const range = max - min;
+					const getX = i => (i / (samples.length - 1)) * W;
+					const getY = i => (1.0 - ((samples.at(i) - min) / range)) * H;
+					
+					if (stats) {
+						ctx.strokeStyle = 'gray';
+						ctx.beginPath();
+						
+						data.peaks( (value, index) => {
+							ctx.moveTo(0, getY(index));
+							ctx.lineTo(getX(index), getY(index));
+							ctx.lineTo(getX(index), H);
+						});
+						
+						ctx.stroke();
+					}
+					
+					ctx.strokeStyle = color;
+					ctx.beginPath();
+					ctx.moveTo(getX(0), getY(0));
+					
+					for (let i = 1; i < samples.length; ++i) {
+						ctx.lineTo(getX(i), getY(i));
+					}
+					
+					window.label_history = window.label_history || {};
+					
+					const labelPos = function(x, y, label) {
+						
+						const maxAge = 10;
+						
+						const foo = label_history[label]
+						
+						if (foo === undefined) {
+							label_history[label] = [[x], [y]];
+							return [x, y];
+						}
+						
+						const u = foo[0].reduce((a, b) => a + b) / foo[0].length;
+						const v = foo[1].reduce((a, b) => a + b) / foo[1].length;
+						
+						foo[0].push(x);
+						foo[1].push(y);
+						
+						if (foo[0].length > maxAge) {
+							foo[0] = foo[0].slice(1);
+							foo[1] = foo[1].slice(1);
+						}
+						
+						return [u, v];
+					}
+					
+					ctx.stroke();
+					
+					if (stats) {
+						ctx.fillStyle = 'white';
+						
+						ctx.fillText(`${Math.round(samples.max)}dB`,
+							...labelPos(8, getY(samples.max_index) - 8, 'b'));
+						ctx.fillText(`${Math.round(samples.min)}dB`,
+							...labelPos(8, getY(samples.min_index) - 8, 'c'));
+						
+						data.peaks( (value, index) => {
+							
+							const freq = index * freqMultiplier;
+							const freqString = freq > 1000 ? `${(freq / 1000.0).toFixed(2)}KHz` : `${freq.toFixed(1)}Hz`
+							
+							ctx.fillText(`${freqString} @${Math.round(value)}dB (${note(freq, 440, false)})`, getX(index) + 4, getY(index));
+						});
+					}
+				}
+				
+				data = data.view(0, data.length >> 1); // because of Nyquist
+				plot(data, 'green', true);
+				
+				if (transform) {
+					try {
+						const tmp = transform(data);
+						if (tmp instanceof BufferView) {
+							plot(tmp, 'orange', false);
+						}
+					} catch (ex) {
+						console.error(ex);
+					}
+				}
+			}
+			
+			function generateTone(audioContext, frequencies) {
+				
+				/*
+				 * a frequency list is transformed in a list of cosine coefficients for the F^-1:
+				 *
+				 * signal = coeff[0] + baseFreq * coeff[1] + baseFreq * 2 * coeff[2]
+				 *
+				 * So that 100Hz + 200Hz + 250Hz becomes 50Hz x [2 + 4 + 5]
+				*/
+				
+				frequencies = frequencies.map(x => Math.floor(x)).sort((a, b) => a - b);
+				const gcd = frequencies.reduce((a, b) => GCD(a, b));
+				frequencies = frequencies.map(x => x / gcd);
+				const count = frequencies[frequencies.length - 1];
+				
+				// for the purpose of this exercise there is really no need to handle such complex signals
+				if (count > 100) {
+					console.error('You really need to choose your frequencies more carefully');
+					return null;
+				}
+				
+				const real = new Float32Array(count + 1); // the first coefficient is the offset
+				const imag = new Float32Array(count + 1);
+
+				// luckily coefficients are already 1-based (there is no freq. such that 0 * GCD = freq)
+				frequencies.forEach(freq => { real[freq] = 1.0; });
+
+				const wave = audioContext.createPeriodicWave(real, imag);
+				const oscillator = audioContext.createOscillator();
+				oscillator.frequency.value = gcd;
+				oscillator.setPeriodicWave(wave);
+				oscillator.start();
+				return oscillator;
+			}
+			
+			class BufferView {
+				
+				constructor(data, start, end) {
+					this.data = data;
+					this.start = start || 0;
+					this.end = end || data.length;
+				}
+				
+				get length() {
+					return this.end - this.start;
+				}
+				
+				at(index, border) {
+					if (index < 0 || index >= this.length) {
+						if (border === undefined) {
+							throw `Index out of bound: ${index} not in [0 - ${this.length - 1}]`;
+						} else {
+							return this.at(border(index, this));
+						}
+					}
+					return this.data[ this.start + index ];
+				}
+				
+				forEach(lambda) {
+					for (let i = 0; i < this.length; ++i) {
+						lambda(this.at(i), i, this);
+					}
+				}
+				
+				map(callback) {
+					const temp = new this.data.__proto__.constructor(this.length);
+					for (let i = 0; i < this.length; ++i) {
+						temp[i] = callback(this.at(i), i, this);
+					}
+					return new BufferView(temp);
+				}
+				
+				// in-place map
+				imap(callback) {
+					for (let i = 0; i < this.length; ++i) {
+						this.data[this.start + i] = callback(this.at(i), i, this);
+					}
+					return this;
+				}
+				
+				reduce(callback, initial) {
+					
+					let first = 0;
+					
+					if (initial === undefined) {
+						initial = this.at(0);
+						first = 1;
+					}
+					
+					for (let i = first; i < this.length; ++i) {
+						initial = callback(initial, this.at(i), i, this);
+					}
+					
+					return initial;
+				}
+				
+				filter(callback) {
+					
+					const temp = [];
+					
+					for (let i = 0; i < this.length; ++i) {
+						const v = this.at(i);
+						if (callback(v, i, this)) {
+							temp.push(v);
+						}
+					}
+					
+					if (this.data instanceof Array) {
+						return new BufferView(temp);
+					}
+					
+					return new BufferView(new this.data.__proto__.constructor(temp));
+				}
+				
+				// b is offset from zero, not length
+				view(a, b) {
+					if (a === undefined) {
+						return this;
+					}
+					if (b === undefined) {
+						b = a;
+						a = 0;
+					}
+					a = Math.max(a, 0);
+					b = Math.min(b, this.length);
+					return new BufferView(this.data, this.start + a, this.start + b);
+				}
+				
+				get min() {
+					if (this._min === undefined) {
+						this._min = [this.at(0), 0];
+						this.forEach((v, i) => {
+							if (this._min[0] > v) {
+								this._min[0] = v;
+								this._min[1] = i;
+							}
+						});
+					}
+					return this._min[0];
+				}
+				
+				get max() {
+					if (this._max === undefined) {
+						this._max = [this.at(0), 0];
+						this.forEach((v, i) => {
+							if (this._max[0] < v) {
+								this._max[0] = v;
+								this._max[1] = i;
+							}
+						});
+					}
+					return this._max[0];
+				}
+				
+				get min_index() {
+					const _ = this.min;
+					return this._min[1];
+				}
+				
+				get max_index() {
+					const _ = this.max;
+					return this._max[1];
+				}
+
+				get mid() {
+					return (this.min + this.max) * 0.5;
+				}
+
+				get range() {
+					return this.max - this.min;
+				}
+				
+				get first() {
+					return this.at(0);
+				}
+				
+				get last() {
+					return this.at(this.length - 1);
+				}
+				
+				normalized(index) {
+					if (index === undefined) {
+						return this.map(v => (v - this.min) / this.range);
+					}
+					return (this.at(index) - this.min) / this.range;
+				}
+				
+				get avg() {
+					if (this._avg === undefined) {
+						this._avg = this.reduce((a, b) => (a + b)) / this.length;
+					}
+					return this._avg;
+				}
+				
+				get sigma() {
+					if (this._sig === undefined) {
+						const devsq = x => Math.pow(x - this.avg, 2);
+						this._sig = Math.sqrt(this.reduce((a, b) => a + devsq(b), 0) / this.length);
+					}
+					return this._sig;
+				}
+				
+				translate(count) {
+					const clamp = (i, d) => i < 0 ? 0 : d.length - 1;
+					return this.map((x, i) => this.at(i + count, clamp));
+				}
+				
+				derive(num) {
+					const clamp = index => 0;
+					if (num === undefined) num = 1;
+					if (num == 0) return this;
+					return this.map( (x, i) => x - this.at(i - 1, clamp)).derive(num - 1);
+				}
+				
+				// this is implemented as a nearest neighborhood
+				resample(count) {
+					
+					if (count == this.length) {
+						return this;
+					}
+					
+					if (count < this.length) {
+						const copy = new this.data.__proto__.constructor(count);
+						const step = Math.floor(this.length / count);
+						for (let i = 0; i < count; ++i) {
+							copy[i] = this.at(i * step);
+						}
+						return new BufferView(copy);
+					}
+					
+					throw 'upsampling not implemented yet';
+				}
+				
+				// kernel can be both a number or a list (Array/Float32Array/...)
+				// if it's a number a uniform normalized kernel will be created as [ 1/N, 1/N, 1/N ... 1/N ]
+				// The convolution is performed in the time-domain, it's O(N x M)
+				convolve(kernel) {
+					
+					if (typeof(kernel) === 'number') {
+						return this.convolve2(x => 1.0 / kernel, kernel);
+					}
+					
+					const clamp = (i, d) => i < 0 ? 0 : d.length - 1;
+					const copy = this.data.slice(this.start, this.end);
+					const hk = kernel.length >> 1;
+					
+					for (let i = 0; i < this.length; ++i) {
+						
+						let x = 0.0;
+						
+						for (let k = -hk; k < hk; ++k) {
+							x += this.at(i + k, clamp) * kernel[k + hk];
+						}
+						
+						copy[ i - this.start ] = x;
+					}
+					
+					return new BufferView(copy);
+				}
+				
+				// convolves this signal with a continuos function 'generator' to be
+				// sampled 'samples' time at 'step' intervals from 'offset'
+				convolve2(generator, samples, step, offset) {
+
+					step = step || 1;
+					offset = offset || 0.0;
+
+					const kernel = new this.data.__proto__.constructor(samples);
+					
+					for (let i = 0; i < samples; ++i) {
+						kernel[i] = generator(offset + i * step);
+					}
+					
+					return this.convolve(kernel);
+				}
+				
+				_apply(value, lambda) {
+					if (typeof(value) !== 'number') {
+						if (value.length !== this.length) {
+							throw "the two BufferView must have the same size";
+						}
+						const _get = (value instanceof BufferView) ? i => value.at(i) : i => value[i];
+						return this.map( (x, i) => lambda(x, _get(i)) );
+					} else {
+						return this.map( x => lambda(x, value) );
+					}
+				}
+				
+				add(value) {
+					return this._apply(value, (a, b) => a + b);
+				}
+				
+				sub(value) {
+					return this._apply(value, (a, b) => a - b);
+				}
+				
+				mul(value) {
+					return this._apply(value, (a, b) => a * b);
+				}
+				
+				div(value) {
+					return this._apply(value, (a, b) => a / b);
+				}
+				
+				abs() {
+					return this.map(x => Math.abs(x));
+				}
+				
+				pow(n) {
+					return this.map(x => Math.pow(x, n));
+				}
+	
+				// this is designed to be fast over correct, it simply checks if a given value
+				// is both over a threshold and bigger then two surrounding samples.
+				// extremes are never peaks by convention
+				isPeak(index, around, threshold) {
+					if (index === 0 || index === this.length - 1) return false;
+					const clamp = (i, d) => i < 0 ? 0 : d.length - 1;
+					const a = this.at(index - (around >> 1), clamp);
+					const b = this.at(index);
+					const c = this.at(index + (around >> 1), clamp);
+					return b > threshold && b > a && b > c;
+				}
+				
+				// if callback retuns true, stop the loop
+				peaks(kernelWidth, offset, callback) {
+					
+					/*
+					   This algorithm compares each samples against an upper-enveloped calculated as
+					   the convolution of the same signal over a uniform normalized kernel of width `kernelWidth` and raised
+					   by `offset`.
+					*/
+
+					if (offset === undefined) {
+						callback = kernelWidth;
+						kernelWidth = 32;
+						offset = 24;
+					}
+					
+					this._peaks = this._peaks || new Map();
+					
+					const key = (kernelWidth | (offset << 16));
+					const cache = this._peaks.get(key);
+					if (cache !== undefined) {
+						for (let maxima of cache) {
+							if (callback(maxima.value, maxima.index, this)) {
+								return;
+							}
+						}
+						return;
+					}
+	
+					const threshold = this.convolve(kernelWidth).add(offset);
+					
+					const list = [];
+					let localMaxima = null;
+					
+					for (let i = 0; i < this.length; ++i) {
+						const value = this.at(i);
+						if (value > threshold.at(i)) {
+							if (localMaxima === null) {
+								localMaxima = {value: value, index: i};
+							} else {
+								if (localMaxima.value < value) {
+									localMaxima.value = value;
+									localMaxima.index = i;
+								}
+							}
+						} else {
+							if (localMaxima !== null) {
+								list.push(localMaxima);
+								if (callback !== null && callback(localMaxima.value, localMaxima.index, this)) {
+									// if callback returns true, exit the loop only if we evaluated less than 1/3 of the buffer
+									// otherwise keep going without calling the callback so to cache the results and do not waste
+									// the convolution.
+									if (i < this.length * 0.33) {
+										return;
+									}
+									callback = null;
+								}
+								localMaxima = null;
+							}
+						}
+					}
+					
+					this._peaks.set(key, list);
+				}
+			};
+			
+			navigator.mediaDevices.getUserMedia({audio: true}).then(function(stream){
+				
+				/*
+				 * range: [0 - 22k]
+				 * samples: 4096 (2048 inside the spectrum)
+				 * = ~10Hz x sample
+				*/
+				
+				const fundamentals = [2, 3, 4].map(x => 440 * x);
+				const fftSize = 4096;
+				const noiseLevel = -80; // dB
+				let enableDrawing = true;
+				let baseline = null;
+				let detector = null;
+				let soundStartedAt = null;
+					
+				// audio subsystem setup
+				const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+				const micNode = audioContext.createMediaStreamSource(stream);
+				const signalNode = generateTone(audioContext, fundamentals);
+				const analyserNode = audioContext.createAnalyser();
+				analyserNode.fftSize = fftSize;
+				const gainNode = audioContext.createGain();
+				gainNode.gain.value = 0.0;
+				const freqMultiplier = analyserNode.context.sampleRate / analyserNode.fftSize;
+				const buffer = new Float32Array(analyserNode.fftSize);
+				
+				function setDetector(func) {
+					detector = func;
+				}
+				
+				function openLoop() {
+					micNode.disconnect();
+					signalNode.disconnect();
+					gainNode.disconnect();
+					
+					micNode.connect(analyserNode);
+					signalNode.connect(gainNode);
+					gainNode.connect(audioContext.destination);
+				}
+				
+				function closeLoop(withFeedbac) {
+					micNode.disconnect();
+					signalNode.disconnect();
+					gainNode.disconnect();
+					
+					signalNode.connect(gainNode);
+					gainNode.connect(analyserNode);
+					
+					if (withFeedbac) {
+						gainNode.connect(audioContext.destination);
+					}
+				};
+				
+				openLoop();
+				
+				const getCurrentTime = () => performance.now() / 1000.0;
+				//const getCurrentTime = () => audioContext.currentTime;
+				
+				const listen = () => {
+					
+					if (enableDrawing || detector) {
+						
+						analyserNode.getFloatFrequencyData(buffer);
+						
+						const buff = new BufferView(buffer);
+						
+						if (enableDrawing) {
+							drawSpectrum(buff, freqMultiplier);
+						}
+						
+						if (detector) {
+							const now = getCurrentTime();
+							if (soundStartedAt !== null && matchSpectrum(buff, freqMultiplier, fundamentals, noiseLevel)) {
+								const delay = now - soundStartedAt;
+								if (delay < 0.0) {
+									console.error('Back To The Future!');
+								}
+								soundStartedAt = null;
+								detector(delay);
+							}
+						}
+					}
+					
+					requestAnimationFrame(listen);	
+				}
+
+				function playSound(delay, duration) {
+					
+					return new Promise(ok => {
+						setTimeout(() => {
+							const now = audioContext.currentTime;
+							soundStartedAt = getCurrentTime();
+							gainNode.gain.setTargetAtTime(1.0, now, 0.0);
+							gainNode.gain.setTargetAtTime(0.0, now + duration, 0.0);
+							setTimeout(ok, duration * 1000.0);
+						}, delay * 1000.0);
+					});
+					
+					/* if (soundStartedAt === null) {
+						soundStartedAt = gainNode.context.currentTime + delay;
+						gainNode.gain.setTargetAtTime(1.0, soundStartedAt, 0.0);
+						gainNode.gain.setTargetAtTime(0.0, soundStartedAt + duration, 0.0);
+					}*/
+				}
+				
+				function reportProgress(text) {
+					output.innerText = text;
+				}
+				
+				function reportResults(data) {
+					
+					output.innerText = [
+						`Baseline is: ${Math.round(baseline * 1000)}ms`,
+						`Avg. is ${Math.round(data.avg * 1000)}ms`,
+						`Max. is ${Math.round(data.max * 1000)}ms`,
+						`Min. is ${Math.round(data.min * 1000)}ms`,
+						` σ   is ${Math.round(data.sigma * 1000)}ms`,
+					].join('\n');
+					
+					drawSamples(data);
+				}
+				
+				function reportError(err) {
+					output.innerText = err;
+				}
+
+				function disableButton(text) {
+					play.classList.add('disabled');
+					play.innerText = text;
+					play.onclick = null;
+				}
+				
+				function enableButton(func) {
+					play.classList.remove('disabled');
+					play.innerText = "Test";
+					play.onclick = func;
+				}
+				
+				async function capture(delay, duration) {
+					
+					return new Promise( (ok, ko) => {
+						
+						const timeout = setTimeout(
+							() => ko("Sample not captured"),
+							(delay + duration) * 1000 * 1.5
+						);
+	
+						setDetector(delay => {
+							clearTimeout(timeout);
+							ok(delay);
+						});
+						
+						playSound(delay, duration);
+					});
+				}
+				
+				async function sleep(amount) {
+					return new Promise((ok) => setTimeout(() => {
+						ok();
+					}, amount * 1000));
+				}
+				
+				async function calculateBaseline() {
+					
+					const delay = 0.5;
+					const duration = 0.2;
+					const amount = 10;
+					
+					disableButton("Calculating baseline...");
+					closeLoop();
+					
+					try {
+					
+						const samples = [];
+						
+						for (let i = 0; i < amount; ++i) {
+							reportProgress(`Sampling ${amount - i}...`);
+							samples.push(await capture(delay, duration));
+						}
+						
+						const view = new BufferView(samples);
+						
+						reportResults(view);
+						
+						await sleep(duration); // do not return until the last beep has finished playing
+						
+						return view.avg;
+						
+					} finally {
+						enableButton(test);
+					}
+				}
+
+				async function test() {
+					
+					if (baseline == null) {
+						baseline = await calculateBaseline();
+					}
+					
+					reportProgress(`Baseline is ${Math.round(baseline * 1000)}ms`);
+					
+					const delay = 1.0
+					const duration = 0.5;
+					const amount = 20;
+					
+					openLoop();
+					disableButton('Testing...');
+					
+					try {
+						
+						const samples = [];
+						
+						for (let i = 0; i < amount; ++i) {
+							reportProgress(`Sampling ${amount - i}...`);
+							const latency = await capture(delay, duration);
+							samples.push(Math.max(0, latency - baseline)); // it is possible to get latency < baseline (rarely) as baseline is an average, maybe we should move to min()?
+						}
+						
+						reportResults(new BufferView(samples));
+
+					} catch(error) {
+						reportError("Could not hear the sample\nmove the headphones/speakers closer to the microphone and/or rise the output volume.");
+					} finally {
+						enableButton(test);
+					}
+				}
+				
+				listen();
+				
+				play.onclick = test;
+				show.onclick = () => {
+					enableDrawing = !enableDrawing;
+					canvas.style.display = enableDrawing ? '' : 'none';
+					show.innerText = enableDrawing ? 'Hide graph' : 'Show graph';
+				};
+				
+				window.beep = function(duration, closed) {
+					if (closed) closeLoop();
+					playSound(0.0, duration).then(openLoop);
+				};
+				
+				window.calculateBaseline = calculateBaseline;
+				window.test = test;
+				window.openLoop = openLoop;
+				window.closeLoop = closeLoop;
+				window.capture = capture;
+				window.drawSamples = drawSamples;
+			});
+
+		</script>
+	</body>
+</html>
