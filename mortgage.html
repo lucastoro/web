@@ -374,12 +374,16 @@
 
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
-        calculateMortgage();
+        // Restore saved state (inputs + spot payments)
+        loadState();
 
-        // Attach event listeners to main inputs for real-time update
+        // Attach event listeners to main inputs for real-time update and persist
         ['principal', 'rate', 'years'].forEach(id => {
-            document.getElementById(id).addEventListener('input', calculateMortgage);
+            const el = document.getElementById(id);
+            el.addEventListener('input', () => { saveState(); calculateMortgage(); });
         });
+
+        calculateMortgage();
     });
 
     function addSpotPayment() {
@@ -409,12 +413,14 @@
         amountInput.value = '';
 
         renderSpotList();
+        saveState();
         calculateMortgage();
     }
 
     function removeSpotPayment(index) {
         spotPayments.splice(index, 1);
         renderSpotList();
+        saveState();
         calculateMortgage();
     }
 
@@ -641,6 +647,32 @@
 
         svgContent += `</svg>`;
         container.innerHTML = svgContent;
+    }
+
+    /* Persist / restore page parameters (principal, rate, years, spot payments) */
+    function saveState() {
+        const state = {
+            principal: document.getElementById('principal').value,
+            rate: document.getElementById('rate').value,
+            years: document.getElementById('years').value,
+            spotPayments: spotPayments
+        };
+        try { localStorage.setItem('mortgage-state', JSON.stringify(state)); } catch (e) { /* ignore */ }
+    }
+
+    function loadState() {
+        try {
+            const raw = localStorage.getItem('mortgage-state');
+            if (!raw) return;
+            const obj = JSON.parse(raw);
+            if (obj.principal != null) document.getElementById('principal').value = obj.principal;
+            if (obj.rate != null) document.getElementById('rate').value = obj.rate;
+            if (obj.years != null) document.getElementById('years').value = obj.years;
+            if (Array.isArray(obj.spotPayments)) {
+                spotPayments = obj.spotPayments.map(p => ({ month: Number(p.month), amount: Number(p.amount) }));
+            }
+        } catch (e) { /* ignore parse errors */ }
+        renderSpotList();
     }
 
     /* Theme toggle initialization (inline, per-page) */
