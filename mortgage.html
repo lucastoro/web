@@ -13,6 +13,17 @@
             --border-color: #bdc3c7;
         }
 
+        /* Dark theme variables (inline) */
+        [data-theme="dark"] {
+            --primary-color: #9fb7d6;
+            --secondary-color: #90a8c8;
+            --accent-color: #4aa3ff;
+            --light-bg: rgba(255,255,255,0.03);
+            --border-color: #23313a;
+            --bg-color: #0b1116;
+            --text-color: #e6eef6;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             line-height: 1.6;
@@ -25,7 +36,6 @@
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            background: white;
             padding: 2rem;
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
@@ -202,7 +212,6 @@
         }
 
         .chart-wrapper {
-            background: white;
             border: 1px solid var(--border-color);
             border-radius: 6px;
             padding: 15px;
@@ -227,11 +236,54 @@
             height: 100%;
             overflow: visible;
         }
+
+        body {
+            transition: background-color 0.25s ease, color 0.25s ease;
+        }
+
+        [data-theme="dark"] body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+
+        [data-theme="dark"] .card, .card h3 {
+            color: var(--border-color);
+        }
+
+        [data-theme="dark"] input {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+
+        th, td {
+            border-bottom: 1px solid var(--border-color);
+        }
+
+         tr:hover {
+            background-color: var(--accent-color);
+        }
+
+        .theme-toggle {
+            position: fixed;
+            right: 12px;
+            top: 12px;
+            z-index: 9999;
+            background: rgba(0,0,0,0.15);
+            color: inherit;
+            border: 1px solid rgba(255,255,255,0.08);
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+        }
+
+        .theme-toggle:hover { background: rgba(0,0,0,0.25); }
     </style>
 </head>
 <body>
 
 <div class="container">
+    <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">🌙</button>
     <h1>Mortgage Simulator</h1>
 
     <div class="input-grid">
@@ -590,6 +642,46 @@
         svgContent += `</svg>`;
         container.innerHTML = svgContent;
     }
+
+    /* Theme toggle initialization (inline, per-page) */
+    (function(){
+        const KEY = 'mortgage-theme';
+        const btnId = 'theme-toggle';
+        const btn = document.getElementById(btnId);
+
+        function setTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+            try { localStorage.setItem(KEY, theme); } catch (e) {}
+        }
+
+        function toggleTheme() { setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'); }
+
+        function init() {
+            const stored = (function(){ try { return localStorage.getItem(KEY); } catch (e) { return null; } })();
+            let theme = stored;
+            if (!theme) {
+                try { theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; } catch(e) { theme = 'light'; }
+            }
+            setTheme(theme);
+            if (btn) btn.addEventListener('click', toggleTheme);
+
+            // React to system preference changes if user hasn't explicitly set a theme
+            try {
+                const mq = window.matchMedia('(prefers-color-scheme: dark)');
+                mq.addEventListener && mq.addEventListener('change', (ev)=>{
+                    const storedNow = (function(){ try { return localStorage.getItem(KEY); } catch(e) { return null; } })();
+                    if (!storedNow) setTheme(ev.matches ? 'dark' : 'light');
+                });
+            } catch (e) { /* non-critical */ }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    })();
 </script>
 
 </body>
