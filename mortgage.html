@@ -205,10 +205,10 @@
 
         .charts-container {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr;
             gap: 20px;
             margin-bottom: 30px;
-            height: 300px;
+
         }
 
         .chart-wrapper {
@@ -376,13 +376,7 @@
     <div class="charts-container">
         <div class="chart-wrapper">
             <div class="chart-title">Monthly Repayment Flow</div>
-            <div class="chart-svg-container" id="chart-payment">
-                <!-- SVG injected via JS -->
-            </div>
-        </div>
-        <div class="chart-wrapper">
-            <div class="chart-title">Principal Repayment Progress</div>
-            <div class="chart-svg-container" id="chart-principal">
+            <div class="chart-svg-container" id="chart">
                 <!-- SVG injected via JS -->
             </div>
         </div>
@@ -616,6 +610,7 @@
         let currentPayment = calculateMonthlyPayment(remainingBalance, monthlyRate, totalMonths);
 
         // Data for charts
+        const interestData = [];
         const paymentsData = [];
         const principalData = [{ month: 0, value: principalStart }]; // Start at full balance
 
@@ -683,8 +678,9 @@
             if (remainingBalance < 0.01) remainingBalance = 0;
 
             // Collect Data
-            paymentsData.push({ month: month, value: totalMonthOutflow });
+            paymentsData.push({ month: month, value: effectivePayment });
             principalData.push({ month: month, value: remainingBalance });
+            interestData.push({ month: month, value: interestPart });
 
             // Render Row
             const row = document.createElement('tr');
@@ -720,9 +716,7 @@
         today.setMonth(today.getMonth() + activeMonths);
         document.getElementById('final-date').textContent = today.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) + ` (${activeMonths} months)`;
 
-        // Render Charts
-        renderBarChart('chart-payment', paymentsData, '#3498db');
-        renderLineChart('chart-principal', principalData, '#e74c3c');
+        renderChart('chart', paymentsData, interestData, principalData);
     }
 
     function calculateMonthlyPayment(principal, monthlyRate, months) {
@@ -730,24 +724,24 @@
         return principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
     }
 
-    function renderBarChart(containerId, data, color) {
+    function renderChart(containerId, paymentsData, interestData, principalData) {
         const container = document.getElementById(containerId);
         container.innerHTML = '';
-        if (data.length === 0) return;
+        if (paymentsData.length === 0) return;
 
         const width = 1000;
         const height = 400;
         const padding = 40;
 
-        const maxValue = Math.max(...data.map(d => d.value));
+        const maxValue = Math.max(...paymentsData.map(d => d.value));
         // Use full duration if calculated, or just active dataset
-        const maxMonth = data[data.length - 1].month;
+        const maxMonth = paymentsData[paymentsData.length - 1].month;
 
         // Scale functions
         const yScale = (value) => height - padding - (value / maxValue) * (height - 2 * padding);
 
         // Simple distributed widths
-        const w = (width - 2 * padding) / data.length;
+        const w = (width - 2 * padding) / paymentsData.length;
 
         let svgContent = `<svg viewBox="0 0 ${width} ${height}">`;
 
@@ -758,59 +752,29 @@
         `;
 
         // Bars
-        data.forEach((d, i) => {
+        paymentsData.forEach((d, i) => {
+
+            const payment = d.value;
+            const interest = interestData[i].value;
+
             const bx = padding + i * w;
-            const by = yScale(d.value);
-            const bh = (height - padding) - by;
+            let by = yScale(payment - interest);
+            let bh = (height - padding) - by;
 
             // Add tooltip logic
-            svgContent += `<rect x="${bx}" y="${by}" width="${w > 1 ? w - 1 : w}" height="${bh}" fill="${color}" opacity="0.8">
-                            <title>Month ${d.month}: €${d.value.toFixed(2)}</title>
+            svgContent += `<rect x="${bx}" y="${by}" width="${w > 1 ? w - 1 : w}" height="${bh}" fill="#3498db" opacity="0.8">
+                            <title>Month ${d.month} payment: €${payment.toFixed(2)}</title>
+                          </rect>`;
+
+            bh = (height - padding) - yScale(interest)
+
+            svgContent += `<rect x="${bx}" y="${by - bh}" width="${w > 1 ? w - 1 : w}" height="${bh}" fill="red" opacity="0.8">
+                            <title>Month ${d.month} interest: €${interest.toFixed(2)}</title>
                           </rect>`;
         });
 
         // Max Value Label
         svgContent += `<text x="${padding + 10}" y="${padding + 20}" font-family="sans-serif" font-size="20" fill="#7f8c8d">Max: €${Math.round(maxValue)}</text>`;
-
-        svgContent += `</svg>`;
-        container.innerHTML = svgContent;
-    }
-
-    function renderLineChart(containerId, data, color) {
-        const container = document.getElementById(containerId);
-        container.innerHTML = '';
-        if (data.length === 0) return;
-
-        const width = 1000;
-        const height = 400;
-        const padding = 40;
-
-        const maxValue = Math.max(...data.map(d => d.value));
-        const maxMonth = data[data.length - 1].month;
-
-        const xScale = (month) => padding + (month / maxMonth) * (width - 2 * padding);
-        const yScale = (value) => height - padding - (value / maxValue) * (height - 2 * padding);
-
-        let svgContent = `<svg viewBox="0 0 ${width} ${height}">`;
-
-        // Grid lines (optional, maybe just axes)
-        svgContent += `
-            <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="#bdc3c7" stroke-width="1" />
-            <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="#bdc3c7" stroke-width="1" />
-        `;
-
-        // Polyline points
-        let points = data.map(d => `${xScale(d.month)},${yScale(d.value)}`).join(' ');
-
-        svgContent += `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="3" />`;
-
-        // Area under line
-        const areaPoints = `${padding},${height-padding} ` + points + ` ${xScale(maxMonth)},${height-padding}`;
-        svgContent += `<polygon points="${areaPoints}" fill="${color}" opacity="0.1" />`;
-
-        // Labels
-        svgContent += `<text x="${padding + 10}" y="${padding + 20}" font-family="sans-serif" font-size="20" fill="#7f8c8d">€${Math.round(maxValue)}</text>`;
-        svgContent += `<text x="${width - padding - 60}" y="${height - padding - 10}" font-family="sans-serif" font-size="20" fill="#7f8c8d">${maxMonth}m</text>`;
 
         svgContent += `</svg>`;
         container.innerHTML = svgContent;
