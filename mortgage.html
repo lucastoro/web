@@ -18,7 +18,7 @@
             --primary-color: #9fb7d6;
             --secondary-color: #90a8c8;
             --accent-color: #4aa3ff;
-            --light-bg: rgba(255,255,255,0.03);
+            --light-bg: rgb(53, 53, 53);
             --border-color: #23313a;
             --bg-color: #0b1116;
             --text-color: #e6eef6;
@@ -320,6 +320,25 @@
         </ul>
     </div>
 
+    <div class="rate-changes-section">
+        <h3>Rate Changes</h3>
+        <p>Schedule interest rate changes at specific months. Enter the new annual rate (%) to apply starting that month.</p>
+        <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
+            <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
+                <label for="rate-month">Month #</label>
+                <input type="number" id="rate-month" placeholder="e.g. 12" min="1">
+            </div>
+            <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
+                <label for="rate-value">Annual Rate (%)</label>
+                <input type="number" id="rate-value" placeholder="e.g. 4.5" step="0.01" min="0">
+            </div>
+            <button onclick="addRateChange()" style="margin-bottom: 2px;">Add Rate Change</button>
+        </div>
+        <ul id="rate-list" class="spot-list">
+            <!-- Rate changes will appear here -->
+        </ul>
+    </div>
+
     <div class="summary-cards">
         <div class="card">
             <h3>Total Paid</h3>
@@ -371,6 +390,7 @@
 
 <script>
     let spotPayments = [];
+    let rateChanges = [];
 
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
@@ -439,6 +459,56 @@
         });
     }
 
+    function addRateChange() {
+        const monthInput = document.getElementById('rate-month');
+        const rateInput = document.getElementById('rate-value');
+
+        const month = parseInt(monthInput.value);
+        const rate = parseFloat(rateInput.value);
+
+        if (!month || isNaN(rate) || month < 1 || rate < 0) {
+            alert("Please enter a valid month and rate.");
+            return;
+        }
+
+        const existingIndex = rateChanges.findIndex(r => r.month === month);
+        if (existingIndex >= 0) {
+            rateChanges[existingIndex].rate = rate; // overwrite
+        } else {
+            rateChanges.push({ month, rate });
+        }
+
+        rateChanges.sort((a,b) => a.month - b.month);
+        monthInput.value = '';
+        rateInput.value = '';
+        renderRateList();
+        saveState();
+        calculateMortgage();
+    }
+
+    function removeRateChange(index) {
+        rateChanges.splice(index, 1);
+        renderRateList();
+        saveState();
+        calculateMortgage();
+    }
+
+    function renderRateList() {
+        const list = document.getElementById('rate-list');
+        if (!list) return;
+        list.innerHTML = '';
+
+        rateChanges.forEach((r, index) => {
+            const li = document.createElement('li');
+            li.className = 'spot-item';
+            li.innerHTML = `
+                <span>Month ${r.month}: ${r.rate}%</span>
+                <button class="delete-btn" onclick="removeRateChange(${index})">×</button>
+            `;
+            list.appendChild(li);
+        });
+    }
+
     function formatMoney(num) {
         return new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' }).format(num);
     }
@@ -450,7 +520,8 @@
 
         if (!principalStart || !years) return; // Wait for valid input
 
-        const monthlyRate = (annualRate / 100) / 12;
+        let currentAnnualRate = annualRate;
+        let monthlyRate = (currentAnnualRate / 100) / 12;
         const totalMonths = years * 12;
 
         let remainingBalance = principalStart;
@@ -464,6 +535,10 @@
         // Determine Spot Payments Map for easy lookup
         const spotMap = new Map();
         spotPayments.forEach(p => spotMap.set(p.month, (spotMap.get(p.month) || 0) + p.amount));
+
+        // Rate changes map (month => annual rate %)
+        const rateMap = new Map();
+        rateChanges.forEach(r => rateMap.set(r.month, Number(r.rate)));
 
         let currentPayment = calculateMonthlyPayment(remainingBalance, monthlyRate, totalMonths);
 
@@ -483,6 +558,14 @@
             // 4. Reduce Balance by Principal Part
             // 5. Apply Spot Payment -> Reduce Balance further
             // 6. Recalculate PMT for next month if spot payment occurred.
+
+            // Apply any scheduled rate change at the start of this month
+            if (rateMap.has(month)) {
+                currentAnnualRate = rateMap.get(month);
+                monthlyRate = (currentAnnualRate / 100) / 12;
+                const remainingMonthsForPayment = totalMonths - (month - 1);
+                currentPayment = calculateMonthlyPayment(remainingBalance, monthlyRate, remainingMonthsForPayment);
+            }
 
             // 1. Interest
             let interestPart = remainingBalance * monthlyRate;
@@ -655,7 +738,8 @@
             principal: document.getElementById('principal').value,
             rate: document.getElementById('rate').value,
             years: document.getElementById('years').value,
-            spotPayments: spotPayments
+            spotPayments: spotPayments,
+            rateChanges: rateChanges
         };
         try { localStorage.setItem('mortgage-state', JSON.stringify(state)); } catch (e) { /* ignore */ }
     }
@@ -671,8 +755,12 @@
             if (Array.isArray(obj.spotPayments)) {
                 spotPayments = obj.spotPayments.map(p => ({ month: Number(p.month), amount: Number(p.amount) }));
             }
+            if (Array.isArray(obj.rateChanges)) {
+                rateChanges = obj.rateChanges.map(r => ({ month: Number(r.month), rate: Number(r.rate) }));
+            }
         } catch (e) { /* ignore parse errors */ }
         renderSpotList();
+        renderRateList();
     }
 
     /* Theme toggle initialization (inline, per-page) */
