@@ -736,6 +736,39 @@
     }
 
     function calculateMonthlyPayment(principal, monthlyRate, months) {
+        /**
+         * @function calculateMonthlyPayment
+         * @description Calculates the monthly payment for an amortized loan, such as a mortgage.
+         *   This function determines the fixed amount a borrower pays each month to repay a loan
+         *   over a specified period, taking into account the principal amount and the interest rate.
+         *
+         * @param {number} principal The total amount of money borrowed (the loan amount).
+         * @param {number} monthlyRate The monthly interest rate, expressed as a decimal (e.g., 0.005 for 0.5%).
+         * @param {number} months The total number of months over which the loan will be repaid.
+         *
+         * @returns {number} The calculated monthly payment amount.
+         *
+         * @description Rationale for the algorithm:
+         *   This function typically implements the standard amortized loan formula (also known as the
+         *   mortgage payment formula). The formula is:
+         *
+         *   M = P [ i(1 + i)^n ] / [ (1 + i)^n – 1]
+         *
+         *   Where:
+         *   - M = Monthly Payment
+         *   - P = Principal Loan Amount
+         *   - i = Monthly Interest Rate (annual rate / 12)
+         *   - n = Total Number of Payments (loan term in years * 12)
+         *
+         *   The core idea is to find a constant monthly payment (M) that, when applied over 'n' months
+         *   at a monthly interest rate 'i', will exactly pay off the initial principal 'P' and all
+         *   accumulated interest. The formula balances the interest accrued each month on the remaining
+         *   principal with the principal reduction component of each payment. If the monthly rate is 0,
+         *   the formula simplifies to P/n, meaning the principal is simply divided by the number of months.
+         *   Edge cases like `monthlyRate` being zero usually need a special handling (e.g., direct division
+         *   `principal / months`) to avoid division by zero or floating-point inaccuracies from the main formula.
+         */
+
         if (monthlyRate === 0) return principal / months;
         return principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
     }
@@ -770,8 +803,8 @@
 
         // Axis lines
         svgContent += `
-            <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="#bdc3c7" stroke-width="1" />
-            <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="#bdc3c7" stroke-width="1" />
+            <line x1="${padding - 4}" y1="${height - padding + 4}" x2="${width - padding + 4}" y2="${height - padding + 4}" stroke="#bdc3c7" stroke-width="1" />
+            <line x1="${padding - 4}" y1="${padding - 4}" x2="${padding - 4}" y2="${height - padding + 4}" stroke="#bdc3c7" stroke-width="1" />
         `;
 
         // Bars
@@ -798,15 +831,13 @@
                           </rect>`;
         });
 
-        // Max Value Label
-        svgContent += `<text x="${padding + 10}" y="${padding + 20}" font-family="sans-serif" font-size="16" fill="#7f8c8d">Max: €${Math.round(maxValue)}</text>`;
 
-        const addEvent = (month, title, color, offset, event) => {
+        const addEvent = (title, color, offset, event) => {
             const bx = padding + (event.month - 1) * ((width - 2 * padding) / paymentsData.length);
             const x1 = bx + (w > 1 ? w / 2 : w / 2);
             const x2 = bx + (w > 1 ? w / 2 : w / 2);
             const y1 = padding;
-            const y2 = height - padding + 8 + offset;
+            const y2 = height - padding + 12 + offset;
 
             svgContent += `<g>
                             <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-dasharray="4" stroke-width="2">
@@ -817,15 +848,15 @@
         };
 
         spotPayments.forEach(spot => {
-            addEvent(spot.month, `Spot Payment ${monthToDate(spot.month)}\nAmount: €${spot.amount.toFixed(2)}`, 'green', 0, spot);
+            addEvent(`${monthToDate(spot.month)}\nSpot: €${spot.amount.toFixed(2)}`, 'green', 0, spot);
         });
 
         rateChanges.forEach(change => {
-            addEvent(change.month, `Rate Change ${monthToDate(change.month)}\nNew Rate: ${change.rate}%`, 'orange', 16, change);
+            addEvent(`${monthToDate(change.month)}\nNew Rate: ${change.rate}%`, 'orange', 16, change);
         });
 
         durationChanges.forEach(change => {
-            addEvent(change.month, `Duration Change ${monthToDate(change.month)}\nNew Duration: ${change.years} years`, 'purple', 32, change);
+            addEvent(`${monthToDate(change.month)}\nNew Duration: ${change.years} years`, 'purple', 32, change);
         });
 
         svgContent += `</svg>`;
