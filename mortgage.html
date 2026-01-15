@@ -66,7 +66,7 @@
             color: var(--secondary-color);
         }
 
-        input[type="number"] {
+        input[type="number"], input[type="date"] {
             width: 100%;
             padding: 10px;
             border: 1px solid var(--border-color);
@@ -162,6 +162,10 @@
             text-align: right;
             padding: 12px;
             border-bottom: 1px solid #ddd;
+        }
+
+        td.interest {
+            color: rgb(255, 134, 134);
         }
 
         th {
@@ -299,6 +303,10 @@
             <label for="years">Duration (Years)</label>
             <input type="number" id="years" value="25" min="1" max="50">
         </div>
+        <div class="form-group">
+            <label for="start-date">First Payment Date</label>
+            <input type="date" id="start-date">
+        </div>
     </div>
 
     <div class="spot-payments-section">
@@ -386,7 +394,7 @@
         <table id="schedule-table">
             <thead>
                 <tr>
-                    <th>Month</th>
+                    <th>Date</th>
                     <th>Payment</th>
                     <th>Principal</th>
                     <th>Interest</th>
@@ -411,8 +419,12 @@
         // Restore saved state (inputs + spot payments)
         loadState();
 
+        if (!document.getElementById('start-date').value) {
+            document.getElementById('start-date').valueAsDate = new Date();
+        }
+
         // Attach event listeners to main inputs for real-time update and persist
-        ['principal', 'rate', 'years'].forEach(id => {
+        ['principal', 'rate', 'years', 'start-date'].forEach(id => {
             const el = document.getElementById(id);
             el.addEventListener('input', () => { saveState(); calculateMortgage(); });
         });
@@ -581,6 +593,7 @@
         const principalStart = parseFloat(document.getElementById('principal').value);
         const annualRate = parseFloat(document.getElementById('rate').value);
         const years = parseInt(document.getElementById('years').value);
+        const startDate = document.getElementById('start-date').valueAsDate || new Date();
 
         if (!principalStart || !years) return; // Wait for valid input
 
@@ -682,17 +695,20 @@
             principalData.push({ month: month, value: remainingBalance });
             interestData.push({ month: month, value: interestPart });
 
+            const paymentDate = new Date(startDate);
+            paymentDate.setMonth(startDate.getMonth() + month - 1);
+
             // Render Row
             const row = document.createElement('tr');
             if (spotAmount > 0) row.classList.add('spot-payment-row');
 
             row.innerHTML = `
-                <td>${month}</td>
-                <td class="currency">${formatMoney(effectivePayment)}</td>
-                <td class="currency">${formatMoney(principalPart)}</td>
-                <td class="currency">${formatMoney(interestPart)}</td>
-                <td class="currency">${spotAmount > 0 ? formatMoney(spotAmount) : '-'}</td>
-                <td class="currency"><strong>${formatMoney(remainingBalance)}</strong></td>
+                <td>${paymentDate.toLocaleDateString(undefined, {month: 'short', year: 'numeric'})}</td>
+                <td class="currency payment">${formatMoney(effectivePayment)}</td>
+                <td class="currency principal">${formatMoney(principalPart)}</td>
+                <td class="currency interest">${formatMoney(interestPart)}</td>
+                <td class="currency spot">${spotAmount > 0 ? formatMoney(spotAmount) : '-'}</td>
+                <td class="currency balance"><strong>${formatMoney(remainingBalance)}</strong></td>
             `;
             tableBody.appendChild(row);
 
@@ -712,9 +728,9 @@
         document.getElementById('total-interest').textContent = formatMoney(totalInterest);
 
         // Calculate estimated date
-        const today = new Date();
-        today.setMonth(today.getMonth() + activeMonths);
-        document.getElementById('final-date').textContent = today.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) + ` (${activeMonths} months)`;
+        const finalDate = new Date(startDate);
+        finalDate.setMonth(startDate.getMonth() + activeMonths - 1);
+        document.getElementById('final-date').textContent = finalDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) + ` (${activeMonths} months)`;
 
         renderChart('chart', paymentsData, interestData, principalData);
     }
@@ -733,6 +749,7 @@
         const height = 400;
         const padding = 40;
 
+        const startDate = document.getElementById('start-date').valueAsDate || new Date();
         const maxValue = Math.max(...paymentsData.map(d => d.value));
         // Use full duration if calculated, or just active dataset
         const maxMonth = paymentsData[paymentsData.length - 1].month;
@@ -761,15 +778,21 @@
             let by = yScale(payment - interest);
             let bh = (height - padding) - by;
 
+            const date = new Date(startDate);
+            date.setMonth(date.getMonth() + d.month - 1);
+            const dateStr = date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+
+            const comment = `${dateStr}\n - Payment €${payment.toFixed(2)}\n - Principal €${(payment - interest).toFixed(2)}\n - Interest €${interest.toFixed(2)}`;
+
             // Add tooltip logic
             svgContent += `<rect x="${bx}" y="${by}" width="${w > 1 ? w - 1 : w}" height="${bh}" fill="#3498db" opacity="0.8">
-                            <title>Month ${d.month} payment: €${payment.toFixed(2)}</title>
+                            <title>${comment}</title>
                           </rect>`;
 
             bh = (height - padding) - yScale(interest)
 
             svgContent += `<rect x="${bx}" y="${by - bh}" width="${w > 1 ? w - 1 : w}" height="${bh}" fill="red" opacity="0.8">
-                            <title>Month ${d.month} interest: €${interest.toFixed(2)}</title>
+                            <title>${comment}</title>
                           </rect>`;
         });
 
@@ -786,6 +809,7 @@
             principal: document.getElementById('principal').value,
             rate: document.getElementById('rate').value,
             years: document.getElementById('years').value,
+            startDate: document.getElementById('start-date').value,
             spotPayments: spotPayments,
             rateChanges: rateChanges,
             durationChanges: durationChanges
@@ -801,6 +825,7 @@
             if (obj.principal != null) document.getElementById('principal').value = obj.principal;
             if (obj.rate != null) document.getElementById('rate').value = obj.rate;
             if (obj.years != null) document.getElementById('years').value = obj.years;
+            if (obj.startDate) document.getElementById('start-date').value = obj.startDate;
             if (Array.isArray(obj.spotPayments)) {
                 spotPayments = obj.spotPayments.map(p => ({ month: Number(p.month), amount: Number(p.amount) }));
             }
