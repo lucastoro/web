@@ -495,11 +495,23 @@
         calculateMortgage();
     });
 
+    function getMonthIndex(date) {
+        const startDate = document.getElementById('start-date').valueAsDate || new Date();
+        return (date.getFullYear() - startDate.getFullYear()) * 12 + (date.getMonth() - startDate.getMonth()) + 1;
+    }
+
+    function monthToDate(monthOffset) {
+        const startDate = document.getElementById('start-date').valueAsDate || new Date();
+        const date = new Date(startDate);
+        date.setMonth(date.getMonth() + monthOffset - 1);
+        return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+    }
+
     function addSpotPayment() {
         const monthInput = document.getElementById('spot-month');
         const amountInput = document.getElementById('spot-amount');
 
-        const month = Math.floor((monthInput.valueAsDate - document.getElementById('start-date').valueAsDate) / (1000 * 60 * 60 * 24 * 30));
+        const month = getMonthIndex(monthInput.valueAsDate);
         const amount = parseFloat(amountInput.value);
 
         if (!month || !amount || month < 1 || amount <= 0) {
@@ -552,7 +564,7 @@
         const monthInput = document.getElementById('rate-month');
         const rateInput = document.getElementById('rate-value');
 
-        const month = Math.floor((monthInput.valueAsDate - document.getElementById('start-date').valueAsDate) / (1000 * 60 * 60 * 24 * 30));
+        const month = getMonthIndex(monthInput.valueAsDate);
         const rate = parseFloat(rateInput.value);
 
         if (!month || isNaN(rate) || month < 1 || rate < 0) {
@@ -602,7 +614,7 @@
         const monthInput = document.getElementById('duration-month');
         const yearsInput = document.getElementById('duration-years');
 
-        const month = Math.floor((monthInput.valueAsDate - document.getElementById('start-date').valueAsDate) / (1000 * 60 * 60 * 24 * 30));
+        const month = getMonthIndex(monthInput.valueAsDate);
         const years = parseInt(yearsInput.value);
 
         if (!month || isNaN(years) || month < 1 || years < 1) {
@@ -834,13 +846,6 @@
 
         if (monthlyRate === 0) return principal / months;
         return principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
-    }
-
-    function monthToDate(monthOffset) {
-        const startDate = document.getElementById('start-date').valueAsDate || new Date();
-        const date = new Date(startDate);
-        date.setMonth(date.getMonth() + monthOffset - 1);
-        return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
     }
 
     function renderChart(containerId, paymentsData, interestData, principalData) {
