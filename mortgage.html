@@ -265,7 +265,6 @@
         svg {
             width: 100%;
             height: 100%;
-            overflow: visible;
         }
 
         body {
@@ -426,6 +425,7 @@
             <div class="chart-svg-container" id="chart">
                 <!-- SVG injected via JS -->
             </div>
+            <button id="reset-zoom-pan" style="margin-top: 10px; align-self: center; display: none; background-color: var(--secondary-color);">Reset View</button>
         </div>
     </div>
 
@@ -929,6 +929,82 @@
 
         svgContent += `</svg>`;
         container.innerHTML = svgContent;
+
+        const svg = container.querySelector('svg');
+        const resetButton = document.getElementById('reset-zoom-pan');
+
+        const initialViewBox = { x: 0, y: 0, w: width, h: height };
+        let viewBox = { ...initialViewBox };
+
+        function updateViewBox() {
+            svg.setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
+            const isZoomed = viewBox.w !== initialViewBox.w || viewBox.h !== initialViewBox.h || viewBox.x !== initialViewBox.x || viewBox.y !== initialViewBox.y;
+            if (resetButton) {
+                resetButton.style.display = isZoomed ? 'block' : 'none';
+            }
+        }
+
+        let isPanning = false;
+        let startPoint = { x: 0, y: 0 };
+
+        svg.addEventListener('mousedown', function(e) {
+            if (e.button !== 0) return; // Only left mouse button
+            isPanning = true;
+            startPoint = { x: e.clientX, y: e.clientY };
+            svg.style.cursor = 'grabbing';
+        });
+
+        svg.addEventListener('mousemove', function(e) {
+            if (!isPanning) return;
+            e.preventDefault();
+            const dx = (startPoint.x - e.clientX) * (viewBox.w / svg.getBoundingClientRect().width);
+            const dy = (startPoint.y - e.clientY) * (viewBox.h / svg.getBoundingClientRect().height);
+            viewBox.x += dx;
+            viewBox.y += dy;
+            startPoint = { x: e.clientX, y: e.clientY };
+            updateViewBox();
+        });
+
+        function stopPanning() {
+            isPanning = false;
+            svg.style.cursor = '';
+        }
+
+        svg.addEventListener('mouseup', stopPanning);
+        svg.addEventListener('mouseleave', stopPanning);
+
+        svg.addEventListener('wheel', function(e) {
+            e.preventDefault();
+            const zoomFactor = 1.1;
+            const { left, top, width: svgWidth, height: svgHeight } = svg.getBoundingClientRect();
+            const mouseX = e.clientX - left;
+            const mouseY = e.clientY - top;
+
+            const svgX = viewBox.x + (mouseX / svgWidth) * viewBox.w;
+            const svgY = viewBox.y + (mouseY / svgHeight) * viewBox.h;
+
+            let newWidth, newHeight;
+            if (e.deltaY < 0) { // Zoom in
+                newWidth = viewBox.w / zoomFactor;
+                newHeight = viewBox.h / zoomFactor;
+            } else { // Zoom out
+                newWidth = viewBox.w * zoomFactor;
+                newHeight = viewBox.h * zoomFactor;
+            }
+
+            viewBox.x = svgX - (mouseX / svgWidth) * newWidth;
+            viewBox.y = svgY - (mouseY / svgHeight) * newHeight;
+            viewBox.w = newWidth;
+            viewBox.h = newHeight;
+            updateViewBox();
+        });
+
+        if (resetButton) {
+            resetButton.addEventListener('click', () => {
+                viewBox = { ...initialViewBox };
+                updateViewBox();
+            });
+        }
     }
 
     /* Persist / restore page parameters (principal, rate, years, spot payments) */
