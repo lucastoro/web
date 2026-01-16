@@ -66,7 +66,7 @@
             color: var(--secondary-color);
         }
 
-        input[type="number"], input[type="date"] {
+        input[type="number"], input[type="date"], input[type="month"] {
             width: 100%;
             padding: 10px;
             border: 1px solid var(--border-color);
@@ -104,7 +104,34 @@
             padding: 0px 20px;
             border: 1px solid var(--border-color);
             border-radius: 6px;
-            margin-bottom: 30px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-color);
+            z-index: 1000;
+            box-shadow: 0 0 64px rgba(0, 0, 0, .5);
+            display: none;
+        }
+
+        .visible {
+            display: block;
+        }
+
+        .add-event-button {
+            padding: 8px;
+            border-radius: 6px;
+        }
+
+        .close-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: transparent;
+            border: none;
+            font-size: 16px;
+            cursor: pointer;
+            color: var(--secondary-color);
         }
 
         .spot-list {
@@ -305,17 +332,27 @@
         </div>
         <div class="form-group">
             <label for="start-date">First Payment Date</label>
-            <input type="date" id="start-date">
+            <input type="month" id="start-date">
+        </div>
+        <div class="form-group">
+            <input type="button" class="add-event-button" id="add-spot" value="Add Spot Payment">
+        </div>
+        <div class="form-group">
+            <input type="button" class="add-event-button" id="add-rate" value="Add Rate Change">
+            </div>
+        <div class="form-group">
+            <input type="button" class="add-event-button" id="add-duration" value="Add Duration Change">
         </div>
     </div>
 
     <div class="spot-payments-section change-section">
         <h3>Spot Payments (Extra Repayments)</h3>
         <p>Add lump sum payments to occur at specific months. Future monthly payments will be adjusted (recalculated) automatically.</p>
+        <input type="button" class="close-button" value="✖" onclick="document.querySelector('.spot-payments-section').classList.remove('visible')">
         <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                 <label for="spot-month">Month #</label>
-                <input type="number" id="spot-month" placeholder="e.g. 12" min="1">
+                <input type="month" id="spot-month">
             </div>
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                 <label for="spot-amount">Amount (€)</label>
@@ -331,10 +368,11 @@
     <div class="rate-changes-section change-section">
         <h3>Rate Changes</h3>
         <p>Schedule interest rate changes at specific months. Enter the new annual rate (%) to apply starting that month.</p>
+        <input type="button" class="close-button" value="✖" onclick="document.querySelector('.rate-changes-section').classList.remove('visible')">
         <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                 <label for="rate-month">Month #</label>
-                <input type="number" id="rate-month" placeholder="e.g. 12" min="1">
+                <input type="month" id="rate-month">
             </div>
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                 <label for="rate-value">Annual Rate (%)</label>
@@ -350,10 +388,11 @@
     <div class="duration-changes-section change-section">
         <h3>Duration Changes</h3>
         <p>Change the total mortgage duration (in years) from a specific month. This will recalculate your monthly payment.</p>
+        <input type="button" class="close-button" value="✖" onclick="document.querySelector('.duration-changes-section').classList.remove('visible')">
         <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                 <label for="duration-month">Month #</label>
-                <input type="number" id="duration-month" placeholder="e.g. 60" min="1">
+                <input type="month" id="duration-month">
             </div>
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                 <label for="duration-years">New Total Duration (Years)</label>
@@ -421,12 +460,36 @@
 
         if (!document.getElementById('start-date').value) {
             document.getElementById('start-date').valueAsDate = new Date();
+            [...document.querySelectorAll('.change-section input[type="month"]')].forEach(i => {
+                i.min = document.getElementById('start-date').value;
+            });
         }
+
+        document.getElementById('add-spot').addEventListener('click', () => {
+            const section = document.querySelector('.spot-payments-section');
+            section.classList.toggle('visible');
+        });
+
+        document.getElementById('add-rate').addEventListener('click', () => {
+            const section = document.querySelector('.rate-changes-section');
+            section.classList.toggle('visible');
+        });
+
+        document.getElementById('add-duration').addEventListener('click', () => {
+            const section = document.querySelector('.duration-changes-section');
+            section.classList.toggle('visible');
+        });
 
         // Attach event listeners to main inputs for real-time update and persist
         ['principal', 'rate', 'years', 'start-date'].forEach(id => {
             const el = document.getElementById(id);
             el.addEventListener('input', () => { saveState(); calculateMortgage(); });
+        });
+
+        document.getElementById('start-date').addEventListener('input', () => {
+            [...document.querySelectorAll('.change-section input[type="month"]')].forEach(i => {
+                i.min = document.getElementById('start-date').value;
+            });
         });
 
         calculateMortgage();
@@ -436,7 +499,7 @@
         const monthInput = document.getElementById('spot-month');
         const amountInput = document.getElementById('spot-amount');
 
-        const month = parseInt(monthInput.value);
+        const month = Math.floor((monthInput.valueAsDate - document.getElementById('start-date').valueAsDate) / (1000 * 60 * 60 * 24 * 30));
         const amount = parseFloat(amountInput.value);
 
         if (!month || !amount || month < 1 || amount <= 0) {
@@ -478,7 +541,7 @@
             const li = document.createElement('li');
             li.className = 'spot-item';
             li.innerHTML = `
-                <span>Month ${p.month}: ${formatMoney(p.amount)}</span>
+                <span>${monthToDate(p.month)}: ${formatMoney(p.amount)}</span>
                 <button class="delete-btn" onclick="removeSpotPayment(${index})">×</button>
             `;
             list.appendChild(li);
@@ -489,7 +552,7 @@
         const monthInput = document.getElementById('rate-month');
         const rateInput = document.getElementById('rate-value');
 
-        const month = parseInt(monthInput.value);
+        const month = Math.floor((monthInput.valueAsDate - document.getElementById('start-date').valueAsDate) / (1000 * 60 * 60 * 24 * 30));
         const rate = parseFloat(rateInput.value);
 
         if (!month || isNaN(rate) || month < 1 || rate < 0) {
@@ -528,7 +591,7 @@
             const li = document.createElement('li');
             li.className = 'spot-item';
             li.innerHTML = `
-                <span>Month ${r.month}: ${r.rate}%</span>
+                <span>${monthToDate(r.month)}: ${r.rate}%</span>
                 <button class="delete-btn" onclick="removeRateChange(${index})">×</button>
             `;
             list.appendChild(li);
@@ -539,7 +602,7 @@
         const monthInput = document.getElementById('duration-month');
         const yearsInput = document.getElementById('duration-years');
 
-        const month = parseInt(monthInput.value);
+        const month = Math.floor((monthInput.valueAsDate - document.getElementById('start-date').valueAsDate) / (1000 * 60 * 60 * 24 * 30));
         const years = parseInt(yearsInput.value);
 
         if (!month || isNaN(years) || month < 1 || years < 1) {
@@ -578,7 +641,7 @@
             const li = document.createElement('li');
             li.className = 'spot-item';
             li.innerHTML = `
-                <span>Month ${d.month}: ${d.years} years</span>
+                <span>${monthToDate(d.month)}: ${d.years} years</span>
                 <button class="delete-btn" onclick="removeDurationChange(${index})">×</button>
             `;
             list.appendChild(li);
@@ -885,7 +948,12 @@
             if (obj.principal != null) document.getElementById('principal').value = obj.principal;
             if (obj.rate != null) document.getElementById('rate').value = obj.rate;
             if (obj.years != null) document.getElementById('years').value = obj.years;
-            if (obj.startDate) document.getElementById('start-date').value = obj.startDate;
+            if (obj.startDate) {
+                document.getElementById('start-date').value = obj.startDate;
+                [...document.querySelectorAll('.change-section input[type="month"]')].forEach(i => {
+                    i.min = obj.startDate;
+                });
+            }
             if (Array.isArray(obj.spotPayments)) {
                 spotPayments = obj.spotPayments.map(p => ({ month: Number(p.month), amount: Number(p.amount) }));
             }
@@ -895,7 +963,10 @@
             if (Array.isArray(obj.durationChanges)) {
                 durationChanges = obj.durationChanges.map(d => ({ month: Number(d.month), years: Number(d.years) }));
             }
-        } catch (e) { /* ignore parse errors */ }
+        } catch (e) {
+            localStorage.removeItem('mortgage-state');
+            window.location.reload();
+        }
         renderSpotList();
         renderRateList();
         renderDurationList();
