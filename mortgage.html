@@ -903,8 +903,14 @@
 
         let totalInterests = 0;
         let totalPrincipal = 0;
+        let principalStart = parseFloat(document.getElementById('principal').value) || 0;
+        let currentRate = parseFloat(document.getElementById('rate').value) || 0;
+
         const spotMap = new Map();
         spotPayments.forEach(p => spotMap.set(p.month, (spotMap.get(p.month) || 0) + p.amount));
+
+        const rateMap = new Map();
+        rateChanges.forEach(r => rateMap.set(r.month, Number(r.rate)));
 
         // Bars
         paymentsData.forEach((d, i) => {
@@ -918,11 +924,23 @@
                 totalPrincipal += spotMap.get(i + 1);
             }
 
+            if (rateMap.has(i + 1)) {
+                currentRate = rateMap.get(i + 1);
+            }
+
             const bx = padding + i * w;
             let by = yScale(payment - interest);
             let bh = (height - padding) - by;
 
-            const comment = `${monthToDate(d.month)}\n - Payment €${payment.toFixed(2)}\n - Principal €${(payment - interest).toFixed(2)}\n - Interest €${interest.toFixed(2)}\n - Total Interest so far €${totalInterests.toFixed(2)}\n - Total Principal paid €${totalPrincipal.toFixed(2)}`;
+            const comment = `${monthToDate(d.month)}` + [
+                '',
+                `Payment €${payment.toFixed(2)}`,
+                `Principal €${(payment - interest).toFixed(2)}`,
+                `Interest €${interest.toFixed(2)} (${currentRate.toFixed(2)}% APR)`,
+                `Total Interest so far €${totalInterests.toFixed(2)}`,
+                `Total Principal paid €${totalPrincipal.toFixed(2)}`,
+                `Principal Remaining €${(principalStart - totalPrincipal).toFixed(2)}`
+            ].join('\n• ');
 
             // Add tooltip logic
             svgContent += `<rect x="${bx}" y="${by}" width="${w > 1 ? w - 1 : w}" height="${bh}" fill="#3498db" opacity="0.8">
@@ -936,7 +954,6 @@
                           </rect>`;
         });
 
-
         const addEvent = (title, color, offset, event) => {
             const bx = padding + (event.month - 1) * ((width - 2 * padding) / paymentsData.length);
             const x1 = bx + (w > 1 ? w / 2 : w / 2);
@@ -945,7 +962,7 @@
             const y2 = height - padding + 12 + offset;
 
             svgContent += `<g>
-                            <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-dasharray="4" stroke-width="2">
+                            <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-dasharray="4" stroke-width="1">
                             </line>
                             <circle cx="${x1}" cy="${y2}" r="5" fill="${color}" />
                             <title>${title}</title>
