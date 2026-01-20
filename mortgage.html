@@ -308,6 +308,11 @@
         }
 
         .theme-toggle:hover { background: rgba(0,0,0,0.25); }
+
+        .drag-over {
+            border: 2px dashed var(--accent-color);
+            background-color: rgba(52, 152, 219, 0.1);
+        }
     </style>
 </head>
 <body>
@@ -491,6 +496,22 @@
             [...document.querySelectorAll('.change-section input[type="month"]')].forEach(i => {
                 i.min = document.getElementById('start-date').value;
             });
+        });
+
+        const container = document.querySelector('.container');
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            container.addEventListener(eventName, e => { e.preventDefault(); e.stopPropagation(); }, false);
+        });
+        ['dragenter', 'dragover'].forEach(eventName => {
+            container.addEventListener(eventName, () => container.classList.add('drag-over'), false);
+        });
+        ['dragleave', 'drop'].forEach(eventName => {
+            container.addEventListener(eventName, () => container.classList.remove('drag-over'), false);
+        });
+        container.addEventListener('drop', e => {
+            if (e.dataTransfer.files.length > 0) {
+                uploadState(e.dataTransfer.files[0]);
+            }
         });
 
         calculateMortgage();
@@ -1024,6 +1045,31 @@
     }
 
     /* Persist / restore page parameters (principal, rate, years, spot payments) */
+    function applyState(obj) {
+        if (!obj) return;
+        try {
+            if (obj.principal != null) document.getElementById('principal').value = obj.principal;
+            if (obj.rate != null) document.getElementById('rate').value = obj.rate;
+            if (obj.years != null) document.getElementById('years').value = obj.years;
+            if (obj.startDate) {
+                document.getElementById('start-date').value = obj.startDate;
+                [...document.querySelectorAll('.change-section input[type="month"]')].forEach(i => {
+                    i.min = obj.startDate;
+                });
+            }
+            spotPayments = Array.isArray(obj.spotPayments) ? obj.spotPayments.map(p => ({ month: Number(p.month), amount: Number(p.amount) })) : [];
+            rateChanges = Array.isArray(obj.rateChanges) ? obj.rateChanges.map(r => ({ month: Number(r.month), rate: Number(r.rate) })) : [];
+            durationChanges = Array.isArray(obj.durationChanges) ? obj.durationChanges.map(d => ({ month: Number(d.month), years: Number(d.years) })) : [];
+
+            renderSpotList();
+            renderRateList();
+            renderDurationList();
+        } catch (e) {
+            console.error("Failed to apply state from file:", e);
+            alert("There was an error applying the state from the file. Check console for details.");
+        }
+    }
+
     function saveState() {
         const state = {
             principal: document.getElementById('principal').value,
@@ -1042,31 +1088,11 @@
             const raw = localStorage.getItem('mortgage-state');
             if (!raw) return;
             const obj = JSON.parse(raw);
-            if (obj.principal != null) document.getElementById('principal').value = obj.principal;
-            if (obj.rate != null) document.getElementById('rate').value = obj.rate;
-            if (obj.years != null) document.getElementById('years').value = obj.years;
-            if (obj.startDate) {
-                document.getElementById('start-date').value = obj.startDate;
-                [...document.querySelectorAll('.change-section input[type="month"]')].forEach(i => {
-                    i.min = obj.startDate;
-                });
-            }
-            if (Array.isArray(obj.spotPayments)) {
-                spotPayments = obj.spotPayments.map(p => ({ month: Number(p.month), amount: Number(p.amount) }));
-            }
-            if (Array.isArray(obj.rateChanges)) {
-                rateChanges = obj.rateChanges.map(r => ({ month: Number(r.month), rate: Number(r.rate) }));
-            }
-            if (Array.isArray(obj.durationChanges)) {
-                durationChanges = obj.durationChanges.map(d => ({ month: Number(d.month), years: Number(d.years) }));
-            }
+            applyState(obj);
         } catch (e) {
             localStorage.removeItem('mortgage-state');
             window.location.reload();
         }
-        renderSpotList();
-        renderRateList();
-        renderDurationList();
     }
 
     function downloadState() {
@@ -1086,8 +1112,28 @@
         URL.revokeObjectURL(url);
     }
 
-    function uploadState() {
-
+    function uploadState(file) {
+        if (!file || !file.type.match('json.*')) {
+            alert('Please drop a valid JSON file.');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const state = JSON.parse(e.target.result);
+                applyState(state);
+                saveState();
+                calculateMortgage();
+            } catch(err) {
+                alert('Error parsing state file.');
+                console.error(err);
+            }
+        }
+        reader.onerror = function(e) {
+            alert('Error reading file.');
+            console.error(e);
+        }
+        reader.readAsText(file);
     }
 
     /* Theme toggle initialization (inline, per-page) */
