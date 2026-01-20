@@ -313,6 +313,7 @@
 <body>
 
 <div class="container">
+    <button id="download" onclick="download()">Download</button>
     <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">🌙</button>
     <h1>Mortgage Simulator</h1>
 
@@ -755,6 +756,7 @@
             if (remainingBalance < spotAmount) {
                 spotAmount = remainingBalance; // Can't overpay beyond 0
             }
+
             remainingBalance -= spotAmount;
 
             // Stats
@@ -844,7 +846,10 @@
          *   `principal / months`) to avoid division by zero or floating-point inaccuracies from the main formula.
          */
 
-        if (monthlyRate === 0) return principal / months;
+        if (monthlyRate === 0) {
+            return principal / months;
+        }
+
         return principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
     }
 
@@ -875,17 +880,28 @@
             <line x1="${padding - 4}" y1="${padding - 4}" x2="${padding - 4}" y2="${height - padding + 4}" stroke="#bdc3c7" stroke-width="1" />
         `;
 
+        let totalInterests = 0;
+        let totalPrincipal = 0;
+        const spotMap = new Map();
+        spotPayments.forEach(p => spotMap.set(p.month, (spotMap.get(p.month) || 0) + p.amount));
+
         // Bars
         paymentsData.forEach((d, i) => {
 
             const payment = d.value;
             const interest = interestData[i].value;
+            totalInterests += interest;
+            totalPrincipal += (payment - interest);
+
+            if (spotMap.get(i + 1)) {
+                totalPrincipal += spotMap.get(i + 1);
+            }
 
             const bx = padding + i * w;
             let by = yScale(payment - interest);
             let bh = (height - padding) - by;
 
-            const comment = `${monthToDate(d.month)}\n - Payment €${payment.toFixed(2)}\n - Principal €${(payment - interest).toFixed(2)}\n - Interest €${interest.toFixed(2)}`;
+            const comment = `${monthToDate(d.month)}\n - Payment €${payment.toFixed(2)}\n - Principal €${(payment - interest).toFixed(2)}\n - Interest €${interest.toFixed(2)}\n - Total Interest so far €${totalInterests.toFixed(2)}\n - Total Principal paid €${totalPrincipal.toFixed(2)}`;
 
             // Add tooltip logic
             svgContent += `<rect x="${bx}" y="${by}" width="${w > 1 ? w - 1 : w}" height="${bh}" fill="#3498db" opacity="0.8">
@@ -1051,6 +1067,27 @@
         renderSpotList();
         renderRateList();
         renderDurationList();
+    }
+
+    function downloadState() {
+        const state = localStorage.getItem('mortgage-state');
+        if (!state) {
+            alert("No saved state found.");
+            return;
+        }
+        const blob = new Blob([state], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'mortgage-calculator-state.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    function uploadState() {
+
     }
 
     /* Theme toggle initialization (inline, per-page) */
