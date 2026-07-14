@@ -152,6 +152,117 @@
             align-items: center;
         }
 
+        .changes-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+        }
+
+        .changes-list {
+            list-style: none;
+            padding: 0;
+            margin: 15px 0 0 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .change-empty {
+            color: var(--secondary-color);
+            font-style: italic;
+            padding: 10px 0;
+        }
+
+        .change-item {
+            background: var(--light-bg);
+            padding: 10px 12px;
+            border-radius: 4px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            transition: opacity 0.2s ease;
+        }
+
+        .change-item.disabled {
+            opacity: 0.5;
+        }
+
+        .change-item .change-month {
+            width: auto;
+            min-width: 130px;
+            flex: 0 0 auto;
+        }
+
+        .change-item .change-value {
+            width: auto;
+            min-width: 110px;
+            flex: 0 0 auto;
+        }
+
+        .change-type-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
+            white-space: nowrap;
+        }
+
+        .change-type-badge.spot { background-color: #2ecc71; }
+        .change-type-badge.rate { background-color: #e67e22; }
+        .change-type-badge.duration { background-color: #9b59b6; }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            width: 42px;
+            height: 24px;
+            flex: 0 0 auto;
+            cursor: pointer;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            inset: 0;
+            background-color: #ccc;
+            border-radius: 24px;
+            transition: background-color 0.2s ease;
+        }
+
+        .toggle-slider::before {
+            content: "";
+            position: absolute;
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            top: 3px;
+            background-color: white;
+            border-radius: 50%;
+            transition: transform 0.2s ease;
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background-color: var(--accent-color);
+        }
+
+        .toggle-switch input:checked + .toggle-slider::before {
+            transform: translateX(18px);
+        }
+
+        .change-item .delete-btn {
+            margin-left: auto;
+        }
+
         .summary-cards {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -365,9 +476,6 @@
             </div>
             <button onclick="addSpotPayment()" style="margin-bottom: 2px;">Add Payment</button>
         </div>
-        <ul id="spot-list" class="spot-list">
-            <!-- Spot payments will appear here -->
-        </ul>
     </div>
 
     <div class="rate-changes-section change-section">
@@ -385,9 +493,6 @@
             </div>
             <button onclick="addRateChange()" style="margin-bottom: 2px;">Add Rate Change</button>
         </div>
-        <ul id="rate-list" class="spot-list">
-            <!-- Rate changes will appear here -->
-        </ul>
     </div>
 
     <div class="duration-changes-section change-section">
@@ -405,8 +510,13 @@
             </div>
             <button onclick="addDurationChange()" style="margin-bottom: 2px;">Add Duration Change</button>
         </div>
-        <ul id="duration-list" class="spot-list">
-            <!-- Duration changes will appear here -->
+    </div>
+
+    <div class="changes-section">
+        <h3>Scheduled Changes</h3>
+        <p>All spot payments, rate changes, and duration changes, sorted by the date they apply. Edit the date or value directly, toggle to disable without deleting, or remove entirely.</p>
+        <ul id="changes-list" class="changes-list">
+            <!-- Rendered by JS -->
         </ul>
     </div>
 
@@ -458,6 +568,11 @@
     let spotPayments = [];
     let rateChanges = [];
     let durationChanges = [];
+    let idCounter = 1;
+
+    function nextId() {
+        return idCounter++;
+    }
 
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
@@ -546,7 +661,7 @@
         if (existingIndex >= 0) {
             spotPayments[existingIndex].amount += amount;
         } else {
-            spotPayments.push({ month, amount });
+            spotPayments.push({ id: nextId(), month, amount, enabled: true });
         }
 
         // Sort by month
@@ -555,31 +670,9 @@
         monthInput.value = '';
         amountInput.value = '';
 
-        renderSpotList();
+        renderChangesList();
         saveState();
         calculateMortgage();
-    }
-
-    function removeSpotPayment(index) {
-        spotPayments.splice(index, 1);
-        renderSpotList();
-        saveState();
-        calculateMortgage();
-    }
-
-    function renderSpotList() {
-        const list = document.getElementById('spot-list');
-        list.innerHTML = '';
-
-        spotPayments.forEach((p, index) => {
-            const li = document.createElement('li');
-            li.className = 'spot-item';
-            li.innerHTML = `
-                <span>${monthToDate(p.month)}: ${formatMoney(p.amount)}</span>
-                <button class="delete-btn" onclick="removeSpotPayment(${index})">×</button>
-            `;
-            list.appendChild(li);
-        });
     }
 
     function addRateChange() {
@@ -598,38 +691,15 @@
         if (existingIndex >= 0) {
             rateChanges[existingIndex].rate = rate; // overwrite
         } else {
-            rateChanges.push({ month, rate });
+            rateChanges.push({ id: nextId(), month, rate, enabled: true });
         }
 
         rateChanges.sort((a,b) => a.month - b.month);
         monthInput.value = '';
         rateInput.value = '';
-        renderRateList();
+        renderChangesList();
         saveState();
         calculateMortgage();
-    }
-
-    function removeRateChange(index) {
-        rateChanges.splice(index, 1);
-        renderRateList();
-        saveState();
-        calculateMortgage();
-    }
-
-    function renderRateList() {
-        const list = document.getElementById('rate-list');
-        if (!list) return;
-        list.innerHTML = '';
-
-        rateChanges.forEach((r, index) => {
-            const li = document.createElement('li');
-            li.className = 'spot-item';
-            li.innerHTML = `
-                <span>${monthToDate(r.month)}: ${r.rate}%</span>
-                <button class="delete-btn" onclick="removeRateChange(${index})">×</button>
-            `;
-            list.appendChild(li);
-        });
     }
 
     function addDurationChange() {
@@ -648,42 +718,128 @@
         if (existingIndex >= 0) {
             durationChanges[existingIndex].years = years; // overwrite
         } else {
-            durationChanges.push({ month, years });
+            durationChanges.push({ id: nextId(), month, years, enabled: true });
         }
 
         durationChanges.sort((a,b) => a.month - b.month);
         monthInput.value = '';
         yearsInput.value = '';
-        renderDurationList();
+        renderChangesList();
         saveState();
         calculateMortgage();
-    }
-
-    function removeDurationChange(index) {
-        durationChanges.splice(index, 1);
-        renderDurationList();
-        saveState();
-        calculateMortgage();
-    }
-
-    function renderDurationList() {
-        const list = document.getElementById('duration-list');
-        if (!list) return;
-        list.innerHTML = '';
-
-        durationChanges.forEach((d, index) => {
-            const li = document.createElement('li');
-            li.className = 'spot-item';
-            li.innerHTML = `
-                <span>${monthToDate(d.month)}: ${d.years} years</span>
-                <button class="delete-btn" onclick="removeDurationChange(${index})">×</button>
-            `;
-            list.appendChild(li);
-        });
     }
 
     function formatMoney(num) {
         return new Intl.NumberFormat('en-IE', { style: 'currency', currency: 'EUR' }).format(num);
+    }
+
+    function monthOffsetToInputValue(monthOffset) {
+        const startDate = document.getElementById('start-date').valueAsDate || new Date();
+        const date = new Date(startDate);
+        date.setMonth(date.getMonth() + monthOffset - 1);
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        return `${y}-${m}`;
+    }
+
+    function getArrayByType(type) {
+        if (type === 'spot') return spotPayments;
+        if (type === 'rate') return rateChanges;
+        if (type === 'duration') return durationChanges;
+        return [];
+    }
+
+    function updateChange(type, id, field, value) {
+        const arr = getArrayByType(type);
+        const item = arr.find(x => x.id === id);
+        if (!item) return;
+
+        if (field === 'month') {
+            const [y, m] = value.split('-').map(Number);
+            if (!y || !m) return;
+            item.month = getMonthIndex(new Date(y, m - 1, 1));
+            arr.sort((a, b) => a.month - b.month);
+        } else {
+            const num = parseFloat(value);
+            if (isNaN(num)) return;
+            item[field] = num;
+        }
+
+        renderChangesList();
+        saveState();
+        calculateMortgage();
+    }
+
+    function toggleChange(type, id, enabled) {
+        const arr = getArrayByType(type);
+        const item = arr.find(x => x.id === id);
+        if (!item) return;
+        item.enabled = enabled;
+        renderChangesList();
+        saveState();
+        calculateMortgage();
+    }
+
+    function removeChange(type, id) {
+        const arr = getArrayByType(type);
+        const idx = arr.findIndex(x => x.id === id);
+        if (idx === -1) return;
+        arr.splice(idx, 1);
+        renderChangesList();
+        saveState();
+        calculateMortgage();
+    }
+
+    function renderChangesList() {
+        const list = document.getElementById('changes-list');
+        if (!list) return;
+        list.innerHTML = '';
+
+        const items = [
+            ...spotPayments.map(data => ({ type: 'spot', data })),
+            ...rateChanges.map(data => ({ type: 'rate', data })),
+            ...durationChanges.map(data => ({ type: 'duration', data }))
+        ];
+
+        items.sort((a, b) => a.data.month - b.data.month);
+
+        if (items.length === 0) {
+            list.innerHTML = '<li class="change-empty">No changes scheduled yet.</li>';
+            return;
+        }
+
+        items.forEach(item => {
+            const { type, data } = item;
+            const li = document.createElement('li');
+            li.className = 'change-item' + (data.enabled === false ? ' disabled' : '');
+
+            const monthValue = monthOffsetToInputValue(data.month);
+            const enabledChecked = data.enabled !== false ? 'checked' : '';
+
+            let badge, valueInput;
+            if (type === 'spot') {
+                badge = '<span class="change-type-badge spot">Spot Payment</span>';
+                valueInput = `<input type="number" class="change-value" min="0" step="any" value="${data.amount}" onchange="updateChange('spot', ${data.id}, 'amount', this.value)">`;
+            } else if (type === 'rate') {
+                badge = '<span class="change-type-badge rate">Rate Change</span>';
+                valueInput = `<input type="number" class="change-value" min="0" step="0.01" value="${data.rate}" onchange="updateChange('rate', ${data.id}, 'rate', this.value)">`;
+            } else {
+                badge = '<span class="change-type-badge duration">Duration Change</span>';
+                valueInput = `<input type="number" class="change-value" min="1" step="1" value="${data.years}" onchange="updateChange('duration', ${data.id}, 'years', this.value)">`;
+            }
+
+            li.innerHTML = `
+                ${badge}
+                <input type="month" class="change-month" value="${monthValue}" onchange="updateChange('${type}', ${data.id}, 'month', this.value)">
+                ${valueInput}
+                <label class="toggle-switch" title="Enable/disable this change">
+                    <input type="checkbox" ${enabledChecked} onchange="toggleChange('${type}', ${data.id}, this.checked)">
+                    <span class="toggle-slider"></span>
+                </label>
+                <button class="delete-btn" onclick="removeChange('${type}', ${data.id})">×</button>
+            `;
+            list.appendChild(li);
+        });
     }
 
     function calculateMortgage() {
@@ -706,16 +862,16 @@
         const tableBody = document.querySelector('#schedule-table tbody');
         tableBody.innerHTML = '';
 
-        // Determine Spot Payments Map for easy lookup
+        // Determine Spot Payments Map for easy lookup (skip disabled entries)
         const spotMap = new Map();
-        spotPayments.forEach(p => spotMap.set(p.month, (spotMap.get(p.month) || 0) + p.amount));
+        spotPayments.filter(p => p.enabled !== false).forEach(p => spotMap.set(p.month, (spotMap.get(p.month) || 0) + p.amount));
 
         // Rate changes map (month => annual rate %)
         const rateMap = new Map();
-        rateChanges.forEach(r => rateMap.set(r.month, Number(r.rate)));
+        rateChanges.filter(r => r.enabled !== false).forEach(r => rateMap.set(r.month, Number(r.rate)));
 
         const durationMap = new Map();
-        durationChanges.forEach(d => durationMap.set(d.month, Number(d.years) * 12));
+        durationChanges.filter(d => d.enabled !== false).forEach(d => durationMap.set(d.month, Number(d.years) * 12));
 
         let currentPayment = calculateMonthlyPayment(remainingBalance, monthlyRate, totalMonths);
 
@@ -907,10 +1063,10 @@
         let currentRate = parseFloat(document.getElementById('rate').value) || 0;
 
         const spotMap = new Map();
-        spotPayments.forEach(p => spotMap.set(p.month, (spotMap.get(p.month) || 0) + p.amount));
+        spotPayments.filter(p => p.enabled !== false).forEach(p => spotMap.set(p.month, (spotMap.get(p.month) || 0) + p.amount));
 
         const rateMap = new Map();
-        rateChanges.forEach(r => rateMap.set(r.month, Number(r.rate)));
+        rateChanges.filter(r => r.enabled !== false).forEach(r => rateMap.set(r.month, Number(r.rate)));
 
         // Bars
         paymentsData.forEach((d, i) => {
@@ -969,15 +1125,15 @@
                           </g>`;
         };
 
-        spotPayments.forEach(spot => {
+        spotPayments.filter(p => p.enabled !== false).forEach(spot => {
             addEvent(`${monthToDate(spot.month)}\nSpot: €${spot.amount.toFixed(2)}`, 'green', 0, spot);
         });
 
-        rateChanges.forEach(change => {
+        rateChanges.filter(r => r.enabled !== false).forEach(change => {
             addEvent(`${monthToDate(change.month)}\nNew Rate: ${change.rate}%`, 'orange', 16, change);
         });
 
-        durationChanges.forEach(change => {
+        durationChanges.filter(d => d.enabled !== false).forEach(change => {
             addEvent(`${monthToDate(change.month)}\nNew Duration: ${change.years} years`, 'purple', 32, change);
         });
 
@@ -1012,9 +1168,8 @@
             if (!isPanning) return;
             e.preventDefault();
             const dx = (startPoint.x - e.clientX) * (viewBox.w / svg.getBoundingClientRect().width);
-            const dy = (startPoint.y - e.clientY) * (viewBox.h / svg.getBoundingClientRect().height);
             viewBox.x += dx;
-            viewBox.y += dy;
+            viewBox.x = Math.max(0, Math.min(viewBox.x, initialViewBox.w - viewBox.w));
             startPoint = { x: e.clientX, y: e.clientY };
             updateViewBox();
         });
@@ -1030,26 +1185,23 @@
         svg.addEventListener('wheel', function(e) {
             e.preventDefault();
             const zoomFactor = 1.1;
-            const { left, top, width: svgWidth, height: svgHeight } = svg.getBoundingClientRect();
+            const { left, width: svgWidth } = svg.getBoundingClientRect();
             const mouseX = e.clientX - left;
-            const mouseY = e.clientY - top;
 
             const svgX = viewBox.x + (mouseX / svgWidth) * viewBox.w;
-            const svgY = viewBox.y + (mouseY / svgHeight) * viewBox.h;
 
-            let newWidth, newHeight;
+            // Horizontal-only zoom: height/y never change
+            let newWidth;
             if (e.deltaY < 0) { // Zoom in
                 newWidth = viewBox.w / zoomFactor;
-                newHeight = viewBox.h / zoomFactor;
             } else { // Zoom out
                 newWidth = viewBox.w * zoomFactor;
-                newHeight = viewBox.h * zoomFactor;
             }
+            newWidth = Math.max(initialViewBox.w / 50, Math.min(newWidth, initialViewBox.w));
 
             viewBox.x = svgX - (mouseX / svgWidth) * newWidth;
-            viewBox.y = svgY - (mouseY / svgHeight) * newHeight;
             viewBox.w = newWidth;
-            viewBox.h = newHeight;
+            viewBox.x = Math.max(0, Math.min(viewBox.x, initialViewBox.w - viewBox.w));
             updateViewBox();
         });
 
@@ -1074,13 +1226,21 @@
                     i.min = obj.startDate;
                 });
             }
-            spotPayments = Array.isArray(obj.spotPayments) ? obj.spotPayments.map(p => ({ month: Number(p.month), amount: Number(p.amount) })) : [];
-            rateChanges = Array.isArray(obj.rateChanges) ? obj.rateChanges.map(r => ({ month: Number(r.month), rate: Number(r.rate) })) : [];
-            durationChanges = Array.isArray(obj.durationChanges) ? obj.durationChanges.map(d => ({ month: Number(d.month), years: Number(d.years) })) : [];
+            let maxId = 0;
+            [obj.spotPayments, obj.rateChanges, obj.durationChanges].forEach(arr => {
+                if (Array.isArray(arr)) arr.forEach(item => { if (typeof item.id === 'number' && item.id > maxId) maxId = item.id; });
+            });
+            idCounter = maxId + 1;
 
-            renderSpotList();
-            renderRateList();
-            renderDurationList();
+            spotPayments = Array.isArray(obj.spotPayments) ? obj.spotPayments.map(p => ({ id: typeof p.id === 'number' ? p.id : nextId(), month: Number(p.month), amount: Number(p.amount), enabled: p.enabled !== false })) : [];
+            rateChanges = Array.isArray(obj.rateChanges) ? obj.rateChanges.map(r => ({ id: typeof r.id === 'number' ? r.id : nextId(), month: Number(r.month), rate: Number(r.rate), enabled: r.enabled !== false })) : [];
+            durationChanges = Array.isArray(obj.durationChanges) ? obj.durationChanges.map(d => ({ id: typeof d.id === 'number' ? d.id : nextId(), month: Number(d.month), years: Number(d.years), enabled: d.enabled !== false })) : [];
+
+            spotPayments.sort((a, b) => a.month - b.month);
+            rateChanges.sort((a, b) => a.month - b.month);
+            durationChanges.sort((a, b) => a.month - b.month);
+
+            renderChangesList();
         } catch (e) {
             console.error("Failed to apply state from file:", e);
             alert("There was an error applying the state from the file. Check console for details.");
