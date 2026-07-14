@@ -341,7 +341,10 @@
                 height: auto;
             }
             .chart-wrapper {
-                height: 300px;
+                height: auto;
+            }
+            .chart-svg-container {
+                min-height: 300px;
             }
         }
 
@@ -371,6 +374,7 @@
         .chart-svg-container {
             flex: 1;
             position: relative;
+            min-height: 400px;
         }
 
         svg {
@@ -423,6 +427,28 @@
         .drag-over {
             border: 2px dashed var(--accent-color);
             background-color: rgba(52, 152, 219, 0.1);
+        }
+
+        .chart-custom-tooltip {
+            position: absolute;
+            z-index: 10000;
+            pointer-events: none;
+            background: var(--primary-color);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            line-height: 1.5;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            opacity: 0;
+            transition: opacity 0.1s ease;
+            white-space: nowrap;
+        }
+
+        .chart-custom-tooltip strong {
+            display: block;
+            margin-bottom: 4px;
+            color: #ecf0f1;
         }
     </style>
 </head>
@@ -538,8 +564,8 @@
     <div class="charts-container">
         <div class="chart-wrapper">
             <div class="chart-title">Monthly Repayment Flow</div>
-            <div class="chart-svg-container" id="chart">
-                <!-- SVG injected via JS -->
+            <div class="chart-svg-container">
+                <canvas id="chart"></canvas>
             </div>
             <button id="reset-zoom-pan" style="margin-top: 10px; align-self: center; display: none; background-color: var(--secondary-color);">Reset View</button>
         </div>
@@ -564,11 +590,19 @@
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script>
+    if (typeof Chart !== 'undefined' && typeof ChartZoom !== 'undefined') {
+        Chart.register(ChartZoom);
+    }
+
     let spotPayments = [];
     let rateChanges = [];
     let durationChanges = [];
     let idCounter = 1;
+    let mortgageChart = null;
 
     function nextId() {
         return idCounter++;
@@ -1030,36 +1064,87 @@
         return principal * (monthlyRate * Math.pow(1 + monthlyRate, months)) / (Math.pow(1 + monthlyRate, months) - 1);
     }
 
+    // Custom tooltip element (shared across renders) used instead of Chart.js's built-in tooltip
+    let chartTooltipEl = null;
+    function getChartTooltipEl() {
+        if (!chartTooltipEl) {
+            chartTooltipEl = document.createElement('div');
+            chartTooltipEl.className = 'chart-custom-tooltip';
+            document.body.appendChild(chartTooltipEl);
+        }
+        return chartTooltipEl;
+    }
+
+    function showChartTooltip(pageX, pageY, lines) {
+        const el = getChartTooltipEl();
+        el.innerHTML = lines.map((line, i) => i === 0 ? `<strong>${line}</strong>` : `<div>${line}</div>`).join('');
+        el.style.opacity = '1';
+        const offset = 14;
+        let left = pageX + offset;
+        let top = pageY + offset;
+        // Keep tooltip within viewport bounds
+        const rect = el.getBoundingClientRect();
+        if (left + rect.width > window.innerWidth + window.scrollX) left = pageX - rect.width - offset;
+        if (top + rect.height > window.innerHeight + window.scrollY) top = pageY - rect.height - offset;
+        el.style.left = `${left}px`;
+        el.style.top = `${top}px`;
+    }
+
+    function hideChartTooltip() {
+        if (chartTooltipEl) chartTooltipEl.style.opacity = '0';
+    }
+
+    // Positions of event markers (spot/rate/duration change indicators), refreshed on every draw
+    let chartMarkerPositions = [];
+
+    const eventMarkersPlugin = {
+        id: 'eventMarkers',
+        afterDraw(chart) {
+            const { ctx, chartArea, scales } = chart;
+            if (!chartArea) return;
+            chartMarkerPositions = [];
+            (chart.$eventMarkers || []).forEach(marker => {
+                const xPixel = scales.x.getPixelForValue(marker.index);
+                if (xPixel < chartArea.left || xPixel > chartArea.right) return;
+                const yCircle = chartArea.top - 8 - marker.offset;
+                const yBottom = chartArea.bottom;
+                ctx.save();
+                ctx.strokeStyle = marker.color;
+                ctx.setLineDash([4, 4]);
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(xPixel, yCircle);
+                ctx.lineTo(xPixel, yBottom);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.fillStyle = marker.color;
+                ctx.beginPath();
+                ctx.arc(xPixel, yCircle, 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                chartMarkerPositions.push({ x: xPixel, y: yCircle, marker });
+            });
+        }
+    };
+
+    function updateResetButtonVisibility(chart) {
+        const resetButton = document.getElementById('reset-zoom-pan');
+        if (!resetButton) return;
+        resetButton.style.display = chart.isZoomedOrPanned() ? 'block' : 'none';
+    }
+
     function renderChart(containerId, paymentsData, interestData, principalData) {
-        const container = document.getElementById(containerId);
-        container.innerHTML = '';
-        if (paymentsData.length === 0) return;
+        const canvas = document.getElementById(containerId);
+        if (!canvas) return;
 
-        const width = 1000;
-        const height = 400;
-        const padding = 40;
-
-        const maxValue = Math.max(...paymentsData.map(d => d.value));
-        // Use full duration if calculated, or just active dataset
-        const maxMonth = paymentsData[paymentsData.length - 1].month;
-
-        // Scale functions
-        const yScale = (value) => height - padding - (value / maxValue) * (height - 2 * padding);
-
-        // Simple distributed widths
-        const w = (width - 2 * padding) / paymentsData.length;
-
-        let svgContent = `<svg viewBox="0 0 ${width} ${height}">`;
-
-        // Axis lines
-        svgContent += `
-            <line x1="${padding - 4}" y1="${height - padding + 4}" x2="${width - padding + 4}" y2="${height - padding + 4}" stroke="#bdc3c7" stroke-width="1" />
-            <line x1="${padding - 4}" y1="${padding - 4}" x2="${padding - 4}" y2="${height - padding + 4}" stroke="#bdc3c7" stroke-width="1" />
-        `;
+        if (paymentsData.length === 0) {
+            if (mortgageChart) { mortgageChart.destroy(); mortgageChart = null; }
+            return;
+        }
 
         let totalInterests = 0;
         let totalPrincipal = 0;
-        let principalStart = parseFloat(document.getElementById('principal').value) || 0;
+        const principalStart = parseFloat(document.getElementById('principal').value) || 0;
         let currentRate = parseFloat(document.getElementById('rate').value) || 0;
 
         const spotMap = new Map();
@@ -1068,13 +1153,18 @@
         const rateMap = new Map();
         rateChanges.filter(r => r.enabled !== false).forEach(r => rateMap.set(r.month, Number(r.rate)));
 
-        // Bars
-        paymentsData.forEach((d, i) => {
+        const labels = [];
+        const principalValues = [];
+        const interestValues = [];
+        const tooltipLines = [];
 
+        paymentsData.forEach((d, i) => {
             const payment = d.value;
             const interest = interestData[i].value;
+            const principalPart = payment - interest;
+
             totalInterests += interest;
-            totalPrincipal += (payment - interest);
+            totalPrincipal += principalPart;
 
             if (spotMap.get(i + 1)) {
                 totalPrincipal += spotMap.get(i + 1);
@@ -1084,133 +1174,136 @@
                 currentRate = rateMap.get(i + 1);
             }
 
-            const bx = padding + i * w;
-            let by = yScale(payment - interest);
-            let bh = (height - padding) - by;
+            labels.push(monthToDate(d.month));
+            principalValues.push(principalPart);
+            interestValues.push(interest);
 
-            const comment = `${monthToDate(d.month)}` + [
-                '',
+            tooltipLines.push([
+                monthToDate(d.month),
                 `Payment €${payment.toFixed(2)}`,
-                `Principal €${(payment - interest).toFixed(2)}`,
+                `Principal €${principalPart.toFixed(2)}`,
                 `Interest €${interest.toFixed(2)} (${currentRate.toFixed(2)}% APR)`,
                 `Total Interest so far €${totalInterests.toFixed(2)}`,
                 `Total Principal paid €${totalPrincipal.toFixed(2)}`,
                 `Principal Remaining €${(principalStart - totalPrincipal).toFixed(2)}`
-            ].join('\n• ');
-
-            // Add tooltip logic
-            svgContent += `<rect x="${bx}" y="${by}" width="${w > 1 ? w - 1 : w}" height="${bh}" fill="#3498db" opacity="0.8">
-                            <title>${comment}</title>
-                          </rect>`;
-
-            bh = (height - padding) - yScale(interest)
-
-            svgContent += `<rect x="${bx}" y="${by - bh}" width="${w > 1 ? w - 1 : w}" height="${bh}" fill="red" opacity="0.8">
-                            <title>${comment}</title>
-                          </rect>`;
+            ]);
         });
 
-        const addEvent = (title, color, offset, event) => {
-            const bx = padding + (event.month - 1) * ((width - 2 * padding) / paymentsData.length);
-            const x1 = bx + (w > 1 ? w / 2 : w / 2);
-            const x2 = bx + (w > 1 ? w / 2 : w / 2);
-            const y1 = padding;
-            const y2 = height - padding + 12 + offset;
+        const eventMarkers = [];
+        spotPayments.filter(p => p.enabled !== false).forEach(spot => {
+            eventMarkers.push({ index: spot.month - 1, color: '#2ecc71', offset: 0, lines: [monthToDate(spot.month), `Spot Payment: €${spot.amount.toFixed(2)}`] });
+        });
+        rateChanges.filter(r => r.enabled !== false).forEach(change => {
+            eventMarkers.push({ index: change.month - 1, color: '#e67e22', offset: 14, lines: [monthToDate(change.month), `New Rate: ${change.rate}%`] });
+        });
+        durationChanges.filter(d => d.enabled !== false).forEach(change => {
+            eventMarkers.push({ index: change.month - 1, color: '#9b59b6', offset: 28, lines: [monthToDate(change.month), `New Duration: ${change.years} years`] });
+        });
 
-            svgContent += `<g>
-                            <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-dasharray="4" stroke-width="1">
-                            </line>
-                            <circle cx="${x1}" cy="${y2}" r="5" fill="${color}" />
-                            <title>${title}</title>
-                          </g>`;
+        if (mortgageChart) {
+            mortgageChart.destroy();
+        }
+
+        mortgageChart = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'Principal',
+                        data: principalValues,
+                        backgroundColor: 'rgba(52, 152, 219, 0.8)',
+                        stack: 'payment'
+                    },
+                    {
+                        label: 'Interest',
+                        data: interestValues,
+                        backgroundColor: 'rgba(231, 76, 60, 0.8)',
+                        stack: 'payment'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                interaction: { mode: 'index', intersect: false },
+                layout: {
+                    padding: { top: 45 }
+                },
+                scales: {
+                    x: {
+                        stacked: true,
+                        ticks: { autoSkip: true, maxRotation: 0 },
+                        grid: { display: false }
+                    },
+                    y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        title: { display: true, text: 'Amount (€)' }
+                    }
+                },
+                plugins: {
+                    legend: { display: true },
+                    tooltip: { enabled: false },
+                    zoom: {
+                        pan: {
+                            enabled: true,
+                            mode: 'x',
+                            onPanComplete: ({ chart }) => updateResetButtonVisibility(chart)
+                        },
+                        zoom: {
+                            wheel: { enabled: true },
+                            pinch: { enabled: true },
+                            mode: 'x',
+                            onZoomComplete: ({ chart }) => updateResetButtonVisibility(chart)
+                        },
+                        limits: { x: { min: 'original', max: 'original' } }
+                    }
+                }
+            },
+            plugins: [eventMarkersPlugin]
+        });
+
+        mortgageChart.$eventMarkers = eventMarkers;
+
+        // Custom tooltip: combines bar hover (via Chart.js index mode) and event marker hover
+        canvas.onmousemove = function(e) {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            // Check event markers first (they sit below the chart area)
+            const hoveredMarker = chartMarkerPositions.find(m => Math.hypot(m.x - mouseX, m.y - mouseY) <= 6);
+            if (hoveredMarker) {
+                canvas.style.cursor = 'pointer';
+                showChartTooltip(e.pageX, e.pageY, hoveredMarker.marker.lines);
+                return;
+            }
+            canvas.style.cursor = '';
+
+            const points = mortgageChart.getElementsAtEventForMode(e, 'index', { intersect: false }, false);
+            if (points.length > 0) {
+                const idx = points[0].index;
+                showChartTooltip(e.pageX, e.pageY, tooltipLines[idx]);
+            } else {
+                hideChartTooltip();
+            }
         };
 
-        spotPayments.filter(p => p.enabled !== false).forEach(spot => {
-            addEvent(`${monthToDate(spot.month)}\nSpot: €${spot.amount.toFixed(2)}`, 'green', 0, spot);
-        });
+        canvas.onmouseleave = function() {
+            hideChartTooltip();
+            canvas.style.cursor = '';
+        };
 
-        rateChanges.filter(r => r.enabled !== false).forEach(change => {
-            addEvent(`${monthToDate(change.month)}\nNew Rate: ${change.rate}%`, 'orange', 16, change);
-        });
-
-        durationChanges.filter(d => d.enabled !== false).forEach(change => {
-            addEvent(`${monthToDate(change.month)}\nNew Duration: ${change.years} years`, 'purple', 32, change);
-        });
-
-        svgContent += `</svg>`;
-        container.innerHTML = svgContent;
-
-        const svg = container.querySelector('svg');
         const resetButton = document.getElementById('reset-zoom-pan');
-
-        const initialViewBox = { x: 0, y: 0, w: width, h: height };
-        let viewBox = { ...initialViewBox };
-
-        function updateViewBox() {
-            svg.setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
-            const isZoomed = viewBox.w !== initialViewBox.w || viewBox.h !== initialViewBox.h || viewBox.x !== initialViewBox.x || viewBox.y !== initialViewBox.y;
-            if (resetButton) {
-                resetButton.style.display = isZoomed ? 'block' : 'none';
-            }
-        }
-
-        let isPanning = false;
-        let startPoint = { x: 0, y: 0 };
-
-        svg.addEventListener('mousedown', function(e) {
-            if (e.button !== 0) return; // Only left mouse button
-            isPanning = true;
-            startPoint = { x: e.clientX, y: e.clientY };
-            svg.style.cursor = 'grabbing';
-        });
-
-        svg.addEventListener('mousemove', function(e) {
-            if (!isPanning) return;
-            e.preventDefault();
-            const dx = (startPoint.x - e.clientX) * (viewBox.w / svg.getBoundingClientRect().width);
-            viewBox.x += dx;
-            viewBox.x = Math.max(0, Math.min(viewBox.x, initialViewBox.w - viewBox.w));
-            startPoint = { x: e.clientX, y: e.clientY };
-            updateViewBox();
-        });
-
-        function stopPanning() {
-            isPanning = false;
-            svg.style.cursor = '';
-        }
-
-        svg.addEventListener('mouseup', stopPanning);
-        svg.addEventListener('mouseleave', stopPanning);
-
-        svg.addEventListener('wheel', function(e) {
-            e.preventDefault();
-            const zoomFactor = 1.1;
-            const { left, width: svgWidth } = svg.getBoundingClientRect();
-            const mouseX = e.clientX - left;
-
-            const svgX = viewBox.x + (mouseX / svgWidth) * viewBox.w;
-
-            // Horizontal-only zoom: height/y never change
-            let newWidth;
-            if (e.deltaY < 0) { // Zoom in
-                newWidth = viewBox.w / zoomFactor;
-            } else { // Zoom out
-                newWidth = viewBox.w * zoomFactor;
-            }
-            newWidth = Math.max(initialViewBox.w / 50, Math.min(newWidth, initialViewBox.w));
-
-            viewBox.x = svgX - (mouseX / svgWidth) * newWidth;
-            viewBox.w = newWidth;
-            viewBox.x = Math.max(0, Math.min(viewBox.x, initialViewBox.w - viewBox.w));
-            updateViewBox();
-        });
-
         if (resetButton) {
-            resetButton.addEventListener('click', () => {
-                viewBox = { ...initialViewBox };
-                updateViewBox();
-            });
+            resetButton.onclick = () => {
+                mortgageChart.resetZoom();
+                resetButton.style.display = 'none';
+            };
         }
+        updateResetButtonVisibility(mortgageChart);
     }
 
     /* Persist / restore page parameters (principal, rate, years, spot payments) */
