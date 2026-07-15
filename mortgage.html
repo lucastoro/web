@@ -471,8 +471,8 @@
             <input type="number" id="rate" value="3.5" min="0" step="0.01">
         </div>
         <div class="form-group">
-            <label for="years">Duration (Years)</label>
-            <input type="number" id="years" value="25" min="1" max="50">
+            <label for="months">Duration (Months)</label>
+            <input type="number" id="months" value="300" min="1" step="1">
         </div>
         <div class="form-group">
             <label for="start-date">First Payment Date</label>
@@ -525,7 +525,7 @@
 
     <div class="duration-changes-section change-section">
         <h3>Duration Changes</h3>
-        <p>Change the total mortgage duration (in years) from a specific month. This will recalculate your monthly payment.</p>
+        <p>Change the total mortgage duration (in months) from a specific month. This will recalculate your monthly payment.</p>
         <input type="button" class="close-button" value="✖" onclick="document.querySelector('.duration-changes-section').classList.remove('visible')">
         <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
@@ -533,8 +533,8 @@
                 <input type="month" id="duration-month">
             </div>
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
-                <label for="duration-years">New Total Duration (Years)</label>
-                <input type="number" id="duration-years" placeholder="e.g. 20" min="1">
+                <label for="duration-months">New Total Duration (Months)</label>
+                <input type="number" id="duration-months" placeholder="e.g. 240" min="1" step="1">
             </div>
             <button onclick="addDurationChange()" style="margin-bottom: 2px;">Add Duration Change</button>
         </div>
@@ -637,7 +637,7 @@
         });
 
         // Attach event listeners to main inputs for real-time update and persist
-        ['principal', 'rate', 'years', 'start-date'].forEach(id => {
+        ['principal', 'rate', 'months', 'start-date'].forEach(id => {
             const el = document.getElementById(id);
             el.addEventListener('input', () => { saveState(); calculateMortgage(); });
         });
@@ -748,26 +748,26 @@
 
     function addDurationChange() {
         const monthInput = document.getElementById('duration-month');
-        const yearsInput = document.getElementById('duration-years');
+        const monthsInput = document.getElementById('duration-months');
 
         const month = getMonthIndex(getDate(monthInput));
-        const years = parseInt(yearsInput.value);
+        const months = parseInt(monthsInput.value);
 
-        if (!month || isNaN(years) || month < 1 || years < 1) {
-            alert("Please enter a valid month and duration in years.");
+        if (!month || isNaN(months) || month < 1 || months < 1) {
+            alert("Please enter a valid month and duration in months.");
             return;
         }
 
         const existingIndex = durationChanges.findIndex(d => d.month === month);
         if (existingIndex >= 0) {
-            durationChanges[existingIndex].years = years; // overwrite
+            durationChanges[existingIndex].months = months; // overwrite
         } else {
-            durationChanges.push({ id: nextId(), month, years, enabled: true });
+            durationChanges.push({ id: nextId(), month, months, enabled: true });
         }
 
         durationChanges.sort((a,b) => a.month - b.month);
         monthInput.value = '';
-        yearsInput.value = '';
+        monthsInput.value = '';
         renderChangesList();
         saveState();
         calculateMortgage();
@@ -869,7 +869,7 @@
                 valueInput = `<input type="number" class="change-value" min="0" step="0.01" value="${data.rate}" onchange="updateChange('rate', ${data.id}, 'rate', this.value)">`;
             } else {
                 badge = '<span class="change-type-badge duration">Duration Change</span>';
-                valueInput = `<input type="number" class="change-value" min="1" step="1" value="${data.years}" onchange="updateChange('duration', ${data.id}, 'years', this.value)">`;
+                valueInput = `<input type="number" class="change-value" min="1" step="1" value="${data.months}" onchange="updateChange('duration', ${data.id}, 'months', this.value)">`;
             }
 
             li.innerHTML = `
@@ -889,14 +889,14 @@
     function calculateMortgage() {
         const principalStart = parseFloat(document.getElementById('principal').value);
         const annualRate = parseFloat(document.getElementById('rate').value);
-        const years = parseInt(document.getElementById('years').value);
+        const months = parseInt(document.getElementById('months').value);
         const startDate = getDate(document.getElementById('start-date')) || new Date();
 
-        if (!principalStart || !years) return; // Wait for valid input
+        if (!principalStart || !months) return; // Wait for valid input
 
         let currentAnnualRate = annualRate;
         let monthlyRate = (currentAnnualRate / 100) / 12;
-        let totalMonths = years * 12;
+        let totalMonths = months;
 
         let remainingBalance = principalStart;
         let totalPaid = 0;
@@ -915,7 +915,7 @@
         rateChanges.filter(r => r.enabled !== false).forEach(r => rateMap.set(r.month, Number(r.rate)));
 
         const durationMap = new Map();
-        durationChanges.filter(d => d.enabled !== false).forEach(d => durationMap.set(d.month, Number(d.years) * 12));
+        durationChanges.filter(d => d.enabled !== false).forEach(d => durationMap.set(d.month, Number(d.months)));
 
         let currentPayment = calculateMonthlyPayment(remainingBalance, monthlyRate, totalMonths);
 
@@ -1056,7 +1056,7 @@
          *   - M = Monthly Payment
          *   - P = Principal Loan Amount
          *   - i = Monthly Interest Rate (annual rate / 12)
-         *   - n = Total Number of Payments (loan term in years * 12)
+         *   - n = Total Number of Payments (loan term in months)
          *
          *   The core idea is to find a constant monthly payment (M) that, when applied over 'n' months
          *   at a monthly interest rate 'i', will exactly pay off the initial principal 'P' and all
@@ -1215,7 +1215,7 @@
         durationChanges.filter(d => d.enabled !== false).forEach(change => {
             if (!eventMap.has(change.month))
                 eventMap.set(change.month, []);
-            eventMap.get(change.month).push({ type: 'duration', years: change.years });
+            eventMap.get(change.month).push({ type: 'duration', months: change.months });
         });
 
         eventMap.forEach((events, month) => {
@@ -1232,7 +1232,7 @@
                         color[0] = 255;
                         break;
                     case 'duration':
-                        lines.push(`New Duration: ${event.years} years`);
+                        lines.push(`New Duration: ${event.months} months`);
                         color[2] = 255;
                         break;
                 }
@@ -1346,13 +1346,14 @@
         updateResetButtonVisibility(mortgageChart);
     }
 
-    /* Persist / restore page parameters (principal, rate, years, spot payments) */
+    /* Persist / restore page parameters (principal, rate, months, spot payments) */
     function applyState(obj) {
         if (!obj) return;
         try {
             if (obj.principal != null) document.getElementById('principal').value = obj.principal;
             if (obj.rate != null) document.getElementById('rate').value = obj.rate;
-            if (obj.years != null) document.getElementById('years').value = obj.years;
+            if (obj.months != null) document.getElementById('months').value = obj.months;
+            else if (obj.years != null) document.getElementById('months').value = Number(obj.years) * 12;
             if (obj.startDate) {
                 document.getElementById('start-date').value = obj.startDate;
                 [...document.querySelectorAll('.change-section input[type="month"]')].forEach(i => {
@@ -1367,7 +1368,7 @@
 
             spotPayments = Array.isArray(obj.spotPayments) ? obj.spotPayments.map(p => ({ id: typeof p.id === 'number' ? p.id : nextId(), month: Number(p.month), amount: Number(p.amount), enabled: p.enabled !== false })) : [];
             rateChanges = Array.isArray(obj.rateChanges) ? obj.rateChanges.map(r => ({ id: typeof r.id === 'number' ? r.id : nextId(), month: Number(r.month), rate: Number(r.rate), enabled: r.enabled !== false })) : [];
-            durationChanges = Array.isArray(obj.durationChanges) ? obj.durationChanges.map(d => ({ id: typeof d.id === 'number' ? d.id : nextId(), month: Number(d.month), years: Number(d.years), enabled: d.enabled !== false })) : [];
+            durationChanges = Array.isArray(obj.durationChanges) ? obj.durationChanges.map(d => ({ id: typeof d.id === 'number' ? d.id : nextId(), month: Number(d.month), months: d.months != null ? Number(d.months) : Number(d.years) * 12, enabled: d.enabled !== false })) : [];
 
             spotPayments.sort((a, b) => a.month - b.month);
             rateChanges.sort((a, b) => a.month - b.month);
@@ -1384,7 +1385,7 @@
         const state = {
             principal: document.getElementById('principal').value,
             rate: document.getElementById('rate').value,
-            years: document.getElementById('years').value,
+            months: document.getElementById('months').value,
             startDate: document.getElementById('start-date').value,
             spotPayments: spotPayments,
             rateChanges: rateChanges,
