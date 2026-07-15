@@ -11,6 +11,7 @@
             --accent-color: #3498db;
             --light-bg: #ecf0f1;
             --border-color: #bdc3c7;
+            --padding: 16px;
         }
 
         /* Dark theme variables (inline) */
@@ -48,15 +49,14 @@
         .input-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
+            gap: var(--padding);
             margin-bottom: 30px;
-            padding: 20px;
+            padding: var(--padding);
             background-color: var(--light-bg);
             border-radius: 6px;
         }
 
         .form-group {
-            margin-bottom: 15px;
         }
 
         label {
@@ -71,7 +71,7 @@
             padding: 10px;
             border: 1px solid var(--border-color);
             border-radius: 4px;
-            font-size: 16px;
+            font-size: var(--padding);
             box-sizing: border-box; /* Ensures padding doesn't affect width */
         }
 
@@ -82,7 +82,7 @@
             padding: 10px 20px;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 16px;
+            font-size: var(--padding);
             transition: background 0.3s;
         }
 
@@ -129,7 +129,7 @@
             right: 10px;
             background: transparent;
             border: none;
-            font-size: 16px;
+            font-size: var(--padding);
             cursor: pointer;
             color: var(--secondary-color);
         }
@@ -154,7 +154,7 @@
 
         .changes-section {
             margin-bottom: 30px;
-            padding: 20px;
+            padding: var(--padding);
             border: 1px solid var(--border-color);
             border-radius: 6px;
         }
@@ -162,7 +162,7 @@
         .changes-list {
             list-style: none;
             padding: 0;
-            margin: 15px 0 0 0;
+            margin: 0;
             display: flex;
             flex-direction: column;
             gap: 8px;
@@ -176,7 +176,7 @@
 
         .change-item {
             background: var(--light-bg);
-            padding: 10px 12px;
+            padding: 6px 12px;
             border-radius: 4px;
             display: flex;
             flex-wrap: wrap;
@@ -209,6 +209,8 @@
             font-weight: 600;
             color: white;
             white-space: nowrap;
+            min-width: 94px;
+            text-align: center;
         }
 
         .change-type-badge.spot { background-color: #2ecc71; }
@@ -266,14 +268,14 @@
         .summary-cards {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
+            gap: var(--padding);
+            margin-bottom: 24px;
         }
 
         .card {
             background: var(--primary-color);
             color: white;
-            padding: 20px;
+            padding: var(--padding);
             border-radius: 6px;
             text-align: center;
         }
@@ -434,7 +436,7 @@
             z-index: 10000;
             pointer-events: none;
             background: var(--primary-color);
-            color: white;
+            color: var(--border-color);
             padding: 8px 12px;
             border-radius: 6px;
             font-size: 12px;
@@ -448,7 +450,7 @@
         .chart-custom-tooltip strong {
             display: block;
             margin-bottom: 4px;
-            color: #ecf0f1;
+            color: black;
         }
     </style>
 </head>
@@ -539,8 +541,6 @@
     </div>
 
     <div class="changes-section">
-        <h3>Scheduled Changes</h3>
-        <p>All spot payments, rate changes, and duration changes, sorted by the date they apply. Edit the date or value directly, toggle to disable without deleting, or remove entirely.</p>
         <ul id="changes-list" class="changes-list">
             <!-- Rendered by JS -->
         </ul>
@@ -1190,14 +1190,44 @@
         });
 
         const eventMarkers = [];
+
+        const eventMap = new Map();
         spotPayments.filter(p => p.enabled !== false).forEach(spot => {
-            eventMarkers.push({ index: spot.month - 1, color: '#2ecc71', offset: 0, lines: [monthToDate(spot.month), `Spot Payment: €${spot.amount.toFixed(2)}`] });
+            if (!eventMap.has(spot.month))
+                eventMap.set(spot.month, []);
+            eventMap.get(spot.month).push({ type: 'spot', amount: spot.amount });
         });
         rateChanges.filter(r => r.enabled !== false).forEach(change => {
-            eventMarkers.push({ index: change.month - 1, color: '#e67e22', offset: 14, lines: [monthToDate(change.month), `New Rate: ${change.rate}%`] });
+            if (!eventMap.has(change.month))
+                eventMap.set(change.month, []);
+            eventMap.get(change.month).push({ type: 'rate', rate: change.rate });
         });
         durationChanges.filter(d => d.enabled !== false).forEach(change => {
-            eventMarkers.push({ index: change.month - 1, color: '#9b59b6', offset: 28, lines: [monthToDate(change.month), `New Duration: ${change.years} years`] });
+            if (!eventMap.has(change.month))
+                eventMap.set(change.month, []);
+            eventMap.get(change.month).push({ type: 'duration', years: change.years });
+        });
+
+        eventMap.forEach((events, month) => {
+            const lines = [monthToDate(month)];
+            color = [0,0,0];
+            events.forEach(event => {
+                switch (event.type) {
+                    case 'spot':
+                        lines.push(`Spot Payment: €${event.amount.toFixed(2)}`);
+                        color[1] = 255;
+                        break;
+                    case 'rate':
+                        lines.push(`New Rate: ${event.rate}%`);
+                        color[0] = 255;
+                        break;
+                    case 'duration':
+                        lines.push(`New Duration: ${event.years} years`);
+                        color[2] = 255;
+                        break;
+                }
+            });
+            eventMarkers.push({ index: month - 1, color: `rgb(${color[0]}, ${color[1]}, ${color[2]})`, offset: 0, lines });
         });
 
         if (mortgageChart) {
