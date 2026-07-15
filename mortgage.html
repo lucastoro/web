@@ -66,7 +66,7 @@
             color: var(--secondary-color);
         }
 
-        input[type="number"], input[type="date"], input[type="month"] {
+        input[type="number"], input[type="date"], input[type="month"], input[type="text"] {
             width: 100%;
             padding: 10px;
             border: 1px solid var(--border-color);
@@ -209,7 +209,7 @@
             font-weight: 600;
             color: white;
             white-space: nowrap;
-            min-width: 94px;
+            min-width: 100px;
             text-align: center;
         }
 
@@ -472,7 +472,7 @@
         </div>
         <div class="form-group">
             <label for="months">Duration (Months)</label>
-            <input type="number" id="months" value="300" min="1" step="1">
+            <input type="text" id="months" value="300" placeholder="e.g. 10 x 24" title="You can use expressions like '10 x 12' for 10 years">
         </div>
         <div class="form-group">
             <label for="start-date">First Payment Date</label>
@@ -534,7 +534,7 @@
             </div>
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
                 <label for="duration-months">New Total Duration (Months)</label>
-                <input type="number" id="duration-months" placeholder="e.g. 240" min="1" step="1">
+                <input type="text" id="duration-months" placeholder="e.g. 10 x 24">
             </div>
             <button onclick="addDurationChange()" style="margin-bottom: 2px;">Add Duration Change</button>
         </div>
@@ -688,6 +688,18 @@
         return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
     }
 
+    function parseMonthExpression(value) {
+        const expression = String(value).trim().replace(/[x×]/gi, '*');
+        if (!expression || !/^[\d\s.+\-*/()]+$/.test(expression)) return NaN;
+
+        try {
+            const result = Function(`"use strict"; return (${expression});`)();
+            return Number.isFinite(result) && Number.isInteger(result) ? result : NaN;
+        } catch (e) {
+            return NaN;
+        }
+    }
+
     function addSpotPayment() {
         const monthInput = document.getElementById('spot-month');
         const amountInput = document.getElementById('spot-amount');
@@ -751,7 +763,7 @@
         const monthsInput = document.getElementById('duration-months');
 
         const month = getMonthIndex(getDate(monthInput));
-        const months = parseInt(monthsInput.value);
+        const months = parseMonthExpression(monthsInput.value);
 
         if (!month || isNaN(months) || month < 1 || months < 1) {
             alert("Please enter a valid month and duration in months.");
@@ -804,7 +816,7 @@
             item.month = getMonthIndex(new Date(y, m - 1, 1));
             arr.sort((a, b) => a.month - b.month);
         } else {
-            const num = parseFloat(value);
+            const num = type === 'duration' && field === 'months' ? parseMonthExpression(value) : parseFloat(value);
             if (isNaN(num)) return;
             item[field] = num;
         }
@@ -869,7 +881,7 @@
                 valueInput = `<input type="number" class="change-value" min="0" step="0.01" value="${data.rate}" onchange="updateChange('rate', ${data.id}, 'rate', this.value)">`;
             } else {
                 badge = '<span class="change-type-badge duration">Duration Change</span>';
-                valueInput = `<input type="number" class="change-value" min="1" step="1" value="${data.months}" onchange="updateChange('duration', ${data.id}, 'months', this.value)">`;
+                valueInput = `<input type="text" class="change-value" value="${data.months}" onchange="updateChange('duration', ${data.id}, 'months', this.value)" placeholder="e.g. 10 x 12" title="You can use expressions like '10 x 12' for 10 years">`;
             }
 
             li.innerHTML = `
@@ -889,7 +901,7 @@
     function calculateMortgage() {
         const principalStart = parseFloat(document.getElementById('principal').value);
         const annualRate = parseFloat(document.getElementById('rate').value);
-        const months = parseInt(document.getElementById('months').value);
+        const months = parseMonthExpression(document.getElementById('months').value);
         const startDate = getDate(document.getElementById('start-date')) || new Date();
 
         if (!principalStart || !months) return; // Wait for valid input
