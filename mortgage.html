@@ -101,7 +101,7 @@
         }
 
         .change-section {
-            padding: 0px 20px;
+            padding: 0px 20px 20px 20px;
             border: 1px solid var(--border-color);
             border-radius: 6px;
             position: absolute;
@@ -495,7 +495,7 @@
         <input type="button" class="close-button" value="✖" onclick="document.querySelector('.spot-payments-section').classList.remove('visible')">
         <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
-                <label for="spot-month">Month #</label>
+                <label for="spot-month">Month (YYYY-MM)</label>
                 <input type="month" id="spot-month">
             </div>
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
@@ -512,7 +512,7 @@
         <input type="button" class="close-button" value="✖" onclick="document.querySelector('.rate-changes-section').classList.remove('visible')">
         <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
-                <label for="rate-month">Month #</label>
+                <label for="rate-month">Month (YYYY-MM)</label>
                 <input type="month" id="rate-month">
             </div>
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
@@ -529,7 +529,7 @@
         <input type="button" class="close-button" value="✖" onclick="document.querySelector('.duration-changes-section').classList.remove('visible')">
         <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
-                <label for="duration-month">Month #</label>
+                <label for="duration-month">Month (YYYY-MM)</label>
                 <input type="month" id="duration-month">
             </div>
             <div class="form-group" style="flex: 1; min-width: 150px; margin-bottom: 0;">
@@ -614,7 +614,8 @@
         loadState();
 
         if (!document.getElementById('start-date').value) {
-            document.getElementById('start-date').valueAsDate = new Date();
+            const now = new Date();
+            document.getElementById('start-date').value = `${now.getFullYear()}-${("" + (now.getMonth() + 1)).padStart(2, '0')}`;
             [...document.querySelectorAll('.change-section input[type="month"]')].forEach(i => {
                 i.min = document.getElementById('start-date').value;
             });
@@ -666,13 +667,22 @@
         calculateMortgage();
     });
 
+    function getDate(elem) {
+        try {
+            const [year, month] = elem.value.split('-').map(x => parseInt(x));
+            return new Date(year, month - 1);
+        } catch (e) {
+            return null;
+        }
+    }
+
     function getMonthIndex(date) {
-        const startDate = document.getElementById('start-date').valueAsDate || new Date();
+        const startDate = getDate(document.getElementById('start-date')) || new Date();
         return (date.getFullYear() - startDate.getFullYear()) * 12 + (date.getMonth() - startDate.getMonth()) + 1;
     }
 
     function monthToDate(monthOffset) {
-        const startDate = document.getElementById('start-date').valueAsDate || new Date();
+        const startDate = getDate(document.getElementById('start-date')) || new Date();
         const date = new Date(startDate);
         date.setMonth(date.getMonth() + monthOffset - 1);
         return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
@@ -682,7 +692,7 @@
         const monthInput = document.getElementById('spot-month');
         const amountInput = document.getElementById('spot-amount');
 
-        const month = getMonthIndex(monthInput.valueAsDate);
+        const month = getMonthIndex(getDate(monthInput));
         const amount = parseFloat(amountInput.value);
 
         if (!month || !amount || month < 1 || amount <= 0) {
@@ -713,7 +723,7 @@
         const monthInput = document.getElementById('rate-month');
         const rateInput = document.getElementById('rate-value');
 
-        const month = getMonthIndex(monthInput.valueAsDate);
+        const month = getMonthIndex(getDate(monthInput));
         const rate = parseFloat(rateInput.value);
 
         if (!month || isNaN(rate) || month < 1 || rate < 0) {
@@ -740,7 +750,7 @@
         const monthInput = document.getElementById('duration-month');
         const yearsInput = document.getElementById('duration-years');
 
-        const month = getMonthIndex(monthInput.valueAsDate);
+        const month = getMonthIndex(getDate(monthInput));
         const years = parseInt(yearsInput.value);
 
         if (!month || isNaN(years) || month < 1 || years < 1) {
@@ -768,7 +778,7 @@
     }
 
     function monthOffsetToInputValue(monthOffset) {
-        const startDate = document.getElementById('start-date').valueAsDate || new Date();
+        const startDate = getDate(document.getElementById('start-date')) || new Date();
         const date = new Date(startDate);
         date.setMonth(date.getMonth() + monthOffset - 1);
         const y = date.getFullYear();
@@ -880,7 +890,7 @@
         const principalStart = parseFloat(document.getElementById('principal').value);
         const annualRate = parseFloat(document.getElementById('rate').value);
         const years = parseInt(document.getElementById('years').value);
-        const startDate = document.getElementById('start-date').valueAsDate || new Date();
+        const startDate = getDate(document.getElementById('start-date')) || new Date();
 
         if (!principalStart || !years) return; // Wait for valid input
 
